@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -12,7 +12,7 @@ import { useAuditLog, AUDIT_ACTIONS } from '@/lib/audit';
 import { exportDayToWrike, downloadWrikeExport } from '@/lib/export-xlsx';
 import { CsvImportDialog } from '@/components/stores/CsvImportDialog';
 import { UserEditDialog } from '@/components/users/UserEditDialog';
-import { ChatDrawer } from '@/components/chat/ChatDrawer';
+import ChatDrawer from '@/components/chat/ChatDrawer';
 import { Calendar } from '@/components/calendar/Calendar';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { StatusPanel } from '@/components/StatusPanel';
@@ -156,8 +156,7 @@ function App() {
         open={showChatDrawer}
         onOpenChange={setShowChatDrawer}
         currentUser={currentUser}
-        roles={roles || null}
-        tiers={tiers || null}
+        hasPerm={(perm: string) => permissions.hasPerm(perm)}
       />
 
       {/* Floating Action Button for Chat */}
@@ -308,7 +307,37 @@ function PlannerView({ activities, users, permissions }: {
   const [exportErrors, setExportErrors] = useState<string[]>([]);
   const { writeAuditLog } = useAuditLog();
   
-  const handleExportToWrike = async () => {
+  // Create usersById lookup
+  const usersById = useMemo(() => {
+    return users.reduce((acc, user) => {
+      acc[user.uid] = user;
+      return acc;
+    }, {} as Record<string, User>);
+  }, [users]);
+  
+  // Create mock days structure for the calendar
+  const days = useMemo(() => {
+    const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const currentDate = new Date();
+    
+    return dayNames.map((dayName, index) => {
+      const date = new Date(currentDate);
+      date.setDate(currentDate.getDate() - currentDate.getDay() + index + 1);
+      
+      // Distribute activities across the week for demo
+      const dayActivities = activities.filter((_, activityIndex) => 
+        activityIndex % 7 === index
+      );
+      
+      return {
+        dayName,
+        date: date.toISOString().split('T')[0],
+        activities: dayActivities
+      };
+    });
+  }, [activities]);
+  
+  const handleExportToWrike = async (period: 'week') => {
     setExportErrors([]);
     
     // Create a mock week structure for the demo
@@ -316,12 +345,6 @@ function PlannerView({ activities, users, permissions }: {
       date: new Date(),
       activities: activities.filter(a => a.status === 'approved')
     };
-    
-    // Create usersById lookup
-    const usersById = users.reduce((acc, user) => {
-      acc[user.uid] = user;
-      return acc;
-    }, {} as Record<string, User>);
     
     // Try to export with strict preflight validation
     const result = exportDayToWrike('Current Week', mockDayCard, usersById);
@@ -375,24 +398,57 @@ function PlannerView({ activities, users, permissions }: {
     }
   };
   
-  const handleAddActivity = () => {
+  const handleAddActivity = (dayName?: string) => {
     // Mock add activity functionality
-    console.log('Add activity clicked');
+    console.log('Add activity clicked for day:', dayName);
+  };
+  
+  const handleOpenActivity = (activityId: string) => {
+    // Mock open activity functionality
+    console.log('Open activity:', activityId);
   };
 
   const handleDismissErrors = () => {
     setExportErrors([]);
   };
 
+  // If we have export errors, show them at the top
+  if (exportErrors.length > 0) {
+    return (
+      <div className="space-y-4">
+        <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="font-medium text-destructive">Export Errors</h3>
+            <Button variant="ghost" size="sm" onClick={handleDismissErrors}>
+              Dismiss
+            </Button>
+          </div>
+          <ul className="text-sm text-destructive space-y-1">
+            {exportErrors.map((error, index) => (
+              <li key={index}>• {error}</li>
+            ))}
+          </ul>
+        </div>
+        <Calendar
+          days={days}
+          usersById={usersById}
+          permissions={{ hasPerm: permissions.hasPerm }}
+          onExportToWrike={handleExportToWrike}
+          onAddActivity={handleAddActivity}
+          onOpenActivity={handleOpenActivity}
+        />
+      </div>
+    );
+  }
+
   return (
     <Calendar
-      activities={activities}
-      users={users}
-      permissions={permissions}
+      days={days}
+      usersById={usersById}
+      permissions={{ hasPerm: permissions.hasPerm }}
       onExportToWrike={handleExportToWrike}
       onAddActivity={handleAddActivity}
-      exportErrors={exportErrors}
-      onDismissErrors={handleDismissErrors}
+      onOpenActivity={handleOpenActivity}
     />
   );
 }

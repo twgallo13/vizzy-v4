@@ -23,6 +23,7 @@ interface SystemStatus {
 
 export function StatusPanel({ className }: StatusPanelProps) {
   const [status, setStatus] = useState<SystemStatus | null>(null);
+  const [recentAuditLogs, setRecentAuditLogs] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { getRecentAuditLogs } = useAuditLog();
@@ -47,6 +48,10 @@ export function StatusPanel({ className }: StatusPanelProps) {
         }
       };
       
+      // Fetch recent audit logs
+      const logs = await getRecentAuditLogs(10);
+      setRecentAuditLogs(logs);
+      
       setStatus(mockStatus);
     } catch (err) {
       setError('Failed to fetch system status');
@@ -58,8 +63,6 @@ export function StatusPanel({ className }: StatusPanelProps) {
   useEffect(() => {
     fetchStatus();
   }, []);
-
-  const recentAuditLogs = getRecentAuditLogs(10);
 
   const getServiceBadgeVariant = (status: string) => {
     switch (status) {
@@ -173,7 +176,7 @@ export function StatusPanel({ className }: StatusPanelProps) {
             <div className="space-y-2">
               {recentAuditLogs.map((log) => (
                 <div 
-                  key={log.logId} 
+                  key={log.id} 
                   className="flex items-center justify-between p-2 hover:bg-muted/20 rounded text-sm"
                 >
                   <div className="flex items-center gap-2 flex-1 min-w-0">
