@@ -334,7 +334,7 @@ function PlannerView({ activities, users, permissions }: {
       
       // Log export failure with detailed information
       await writeAuditLog({
-        userId: currentUser?.uid || 'u_1',
+        userId: 'u_1', // Mock current user
         action: AUDIT_ACTIONS.EXPORT_FAILURE,
         targetId: 'current_week',
         source: 'ui',
@@ -358,7 +358,7 @@ function PlannerView({ activities, users, permissions }: {
       
       // Log successful export
       await writeAuditLog({
-        userId: currentUser?.uid || 'u_1',
+        userId: 'u_1', // Mock current user
         action: AUDIT_ACTIONS.PLANNER_ACTIVITY_EXPORTED,
         targetId: 'current_week',
         source: 'ui',

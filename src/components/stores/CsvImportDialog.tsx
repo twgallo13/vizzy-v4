@@ -3,8 +3,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Upload, Download, AlertCircle, CheckCircle } from 'lucide-react';
 import { parseStoresCsv, processStoreImport, downloadErrorReport, type ImportResult } from '@/lib/csv';
 import type { Store } from '@/models/core';
@@ -17,6 +17,10 @@ interface CsvImportDialogProps {
 
 type ImportStep = 'upload' | 'preview' | 'mapping' | 'processing' | 'complete';
 
+const REQUIRED_FIELDS = ['storeNumber', 'name', 'city', 'state', 'zip', 'status'];
+const OPTIONAL_FIELDS = ['address1', 'address2', 'storeType', 'phone', 'website', 'managerUid', 'notes'];
+const ALL_FIELDS = [...REQUIRED_FIELDS, ...OPTIONAL_FIELDS];
+
 export function CsvImportDialog({ open, onOpenChange, onImport }: CsvImportDialogProps) {
   const [step, setStep] = useState<ImportStep>('upload');
   const [file, setFile] = useState<File | null>(null);
@@ -27,19 +31,9 @@ export function CsvImportDialog({ open, onOpenChange, onImport }: CsvImportDialo
   const [isProcessing, setIsProcessing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Required and optional store fields for mapping
-  const REQUIRED_FIELDS = ['storeNumber', 'name', 'city', 'state', 'zip', 'status'];
-  const OPTIONAL_FIELDS = ['address1', 'address2', 'storeType', 'phone', 'website', 'managerUid', 'notes'];
-  const ALL_FIELDS = [...REQUIRED_FIELDS, ...OPTIONAL_FIELDS];
-
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0];
     if (!selectedFile) return;
-
-    if (!selectedFile.name.toLowerCase().endsWith('.csv')) {
-      alert('Please select a CSV file');
-      return;
-    }
 
     setFile(selectedFile);
     setIsProcessing(true);
@@ -48,35 +42,44 @@ export function CsvImportDialog({ open, onOpenChange, onImport }: CsvImportDialo
       const data = await parseStoresCsv(selectedFile);
       setRawData(data);
       
-      // Detect headers from the first row
-      const headers = data.length > 0 ? Object.keys(data[0]) : [];
-      setDetectedHeaders(headers);
-      
-      // Auto-map headers that match exactly
-      const autoMapping: Record<string, string> = {};
-      headers.forEach(header => {
-        if (ALL_FIELDS.includes(header)) {
-          autoMapping[header] = header;
-        }
-      });
-      setHeaderMapping(autoMapping);
-      
-      setStep('mapping');
+      if (data.length > 0) {
+        const headers = Object.keys(data[0]);
+        setDetectedHeaders(headers);
+        
+        // Auto-map headers that match exactly
+        const initialMapping: Record<string, string> = {};
+        headers.forEach(header => {
+          const normalizedHeader = header.toLowerCase().trim();
+          const matchingField = ALL_FIELDS.find(field => 
+            field.toLowerCase() === normalizedHeader
+          );
+          if (matchingField) {
+            initialMapping[header] = matchingField;
+          }
+        });
+        setHeaderMapping(initialMapping);
+        
+        setStep('mapping');
+      }
     } catch (error) {
-      console.error('Error parsing CSV:', error);
       alert('Error parsing CSV file. Please check the format and try again.');
+      handleReset();
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const handleProcessImport = () => {
-    setIsProcessing(true);
+  const handleProcessImport = async () => {
+    if (!rawData.length) return;
+    
     setStep('processing');
+    setIsProcessing(true);
 
-    // Simulate async processing with mapping
-    setTimeout(() => {
-      // Apply header mapping to raw data
+    // Simulate async processing
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    try {
+      // Map the raw data using header mapping
       const mappedData = rawData.map(row => {
         const mappedRow: any = {};
         Object.entries(headerMapping).forEach(([csvHeader, storeField]) => {
@@ -86,12 +89,16 @@ export function CsvImportDialog({ open, onOpenChange, onImport }: CsvImportDialo
         });
         return mappedRow;
       });
-      
+
       const result = processStoreImport(mappedData);
       setImportResult(result);
-      setIsProcessing(false);
       setStep('complete');
-    }, 1000);
+    } catch (error) {
+      alert('Error processing import. Please try again.');
+      setStep('mapping');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleConfirmImport = () => {
@@ -132,6 +139,7 @@ export function CsvImportDialog({ open, onOpenChange, onImport }: CsvImportDialo
                 accept=".csv"
                 onChange={handleFileSelect}
                 className="max-w-xs mx-auto"
+                disabled={isProcessing}
               />
             </div>
             
@@ -142,7 +150,7 @@ export function CsvImportDialog({ open, onOpenChange, onImport }: CsvImportDialo
               <CardContent className="text-sm">
                 <p className="mb-2">Required headers:</p>
                 <div className="flex flex-wrap gap-1 mb-3">
-                  {['storeNumber', 'name', 'city', 'state', 'zip', 'status'].map(header => (
+                  {REQUIRED_FIELDS.map(header => (
                     <Badge key={header} variant="outline" className="text-xs">
                       {header}
                     </Badge>
@@ -150,7 +158,7 @@ export function CsvImportDialog({ open, onOpenChange, onImport }: CsvImportDialo
                 </div>
                 <p className="mb-2">Optional headers:</p>
                 <div className="flex flex-wrap gap-1">
-                  {['address1', 'address2', 'storeType', 'phone', 'website', 'managerUid', 'notes'].map(header => (
+                  {OPTIONAL_FIELDS.map(header => (
                     <Badge key={header} variant="secondary" className="text-xs">
                       {header}
                     </Badge>
@@ -161,14 +169,14 @@ export function CsvImportDialog({ open, onOpenChange, onImport }: CsvImportDialo
           </div>
         );
 
-      case 'preview':
+      case 'mapping':
         return (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="font-medium">Preview Data</h3>
+                <h3 className="font-medium">Map CSV Headers</h3>
                 <p className="text-sm text-muted-foreground">
-                  {rawData.length} rows detected in {file?.name}
+                  Map your CSV headers to store fields
                 </p>
               </div>
               <Button variant="outline" onClick={handleReset}>
@@ -176,11 +184,59 @@ export function CsvImportDialog({ open, onOpenChange, onImport }: CsvImportDialo
               </Button>
             </div>
             
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Header Mapping</CardTitle>
+                <CardDescription>
+                  Match your CSV columns to the correct store fields
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {detectedHeaders.map(header => (
+                  <div key={header} className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <Badge variant="outline" className="text-xs">
+                        {header}
+                      </Badge>
+                    </div>
+                    <div className="flex-1">
+                      <Select 
+                        value={headerMapping[header] || ''} 
+                        onValueChange={(value) => 
+                          setHeaderMapping(prev => ({
+                            ...prev,
+                            [header]: value === 'none' ? '' : value
+                          }))
+                        }
+                      >
+                        <SelectTrigger className="h-8">
+                          <SelectValue placeholder="Select field..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">
+                            <span className="text-muted-foreground">Skip this column</span>
+                          </SelectItem>
+                          {ALL_FIELDS.map(field => (
+                            <SelectItem key={field} value={field}>
+                              {field}
+                              {REQUIRED_FIELDS.includes(field) && (
+                                <Badge variant="destructive" className="ml-2 text-xs">Required</Badge>
+                              )}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+
             <div className="border rounded-lg max-h-64 overflow-auto">
               <table className="w-full text-sm">
                 <thead className="bg-muted/50">
                   <tr>
-                    {rawData.length > 0 && Object.keys(rawData[0]).map(header => (
+                    {detectedHeaders.map(header => (
                       <th key={header} className="text-left p-2 font-medium">
                         {header}
                       </th>
@@ -190,9 +246,9 @@ export function CsvImportDialog({ open, onOpenChange, onImport }: CsvImportDialo
                 <tbody>
                   {rawData.slice(0, 5).map((row, index) => (
                     <tr key={index} className="border-t">
-                      {Object.values(row).map((value, i) => (
-                        <td key={i} className="p-2">
-                          {String(value)}
+                      {detectedHeaders.map(header => (
+                        <td key={header} className="p-2">
+                          {String(row[header] || '')}
                         </td>
                       ))}
                     </tr>
@@ -209,152 +265,11 @@ export function CsvImportDialog({ open, onOpenChange, onImport }: CsvImportDialo
           </div>
         );
 
-      case 'mapping':
-        return (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="font-medium">Map CSV Headers to Store Fields</h3>
-                <p className="text-sm text-muted-foreground">
-                  Match your CSV headers to the required store data fields
-                </p>
-              </div>
-              <Button variant="outline" onClick={handleReset}>
-                Select Different File
-              </Button>
-            </div>
-            
-            {/* Mapping Configuration */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Header Mapping</CardTitle>
-                <CardDescription>
-                  Select which store field each CSV column should map to
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {detectedHeaders.map(csvHeader => (
-                    <div key={csvHeader} className="flex items-center gap-3">
-                      <div className="flex-1">
-                        <Badge variant="outline" className="font-mono text-xs">
-                          {csvHeader}
-                        </Badge>
-                      </div>
-                      <span className="text-muted-foreground">→</span>
-                      <div className="flex-1">
-                        <Select
-                          value={headerMapping[csvHeader] || ''}
-                          onValueChange={(value) => 
-                            setHeaderMapping(prev => ({ ...prev, [csvHeader]: value }))
-                          }
-                        >
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select store field..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="">
-                              <span className="text-muted-foreground">Skip this column</span>
-                            </SelectItem>
-                            {REQUIRED_FIELDS.map(field => (
-                              <SelectItem key={field} value={field}>
-                                <div className="flex items-center gap-2">
-                                  <span>{field}</span>
-                                  <Badge variant="destructive" className="text-xs">required</Badge>
-                                </div>
-                              </SelectItem>
-                            ))}
-                            {OPTIONAL_FIELDS.map(field => (
-                              <SelectItem key={field} value={field}>
-                                <div className="flex items-center gap-2">
-                                  <span>{field}</span>
-                                  <Badge variant="secondary" className="text-xs">optional</Badge>
-                                </div>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-            
-            {/* Validation Summary */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Validation Summary</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {REQUIRED_FIELDS.map(field => {
-                    const isMapped = Object.values(headerMapping).includes(field);
-                    return (
-                      <div key={field} className="flex items-center justify-between">
-                        <span className="text-sm">{field}</span>
-                        {isMapped ? (
-                          <Badge variant="default" className="text-xs">
-                            <CheckCircle className="h-3 w-3 mr-1" />
-                            Mapped
-                          </Badge>
-                        ) : (
-                          <Badge variant="destructive" className="text-xs">
-                            <AlertCircle className="h-3 w-3 mr-1" />
-                            Required
-                          </Badge>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-            
-            {/* Sample Data Preview */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Sample Data Preview</CardTitle>
-                <CardDescription>Preview of how your data will be imported</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="border rounded-lg max-h-32 overflow-auto">
-                  <table className="w-full text-xs">
-                    <thead className="bg-muted/50">
-                      <tr>
-                        {REQUIRED_FIELDS.concat(OPTIONAL_FIELDS.filter(f => Object.values(headerMapping).includes(f))).map(field => (
-                          <th key={field} className="text-left p-2 font-medium">
-                            {field}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rawData.slice(0, 3).map((row, index) => (
-                        <tr key={index} className="border-t">
-                          {REQUIRED_FIELDS.concat(OPTIONAL_FIELDS.filter(f => Object.values(headerMapping).includes(f))).map(field => {
-                            const csvHeader = Object.entries(headerMapping).find(([, storeField]) => storeField === field)?.[0];
-                            return (
-                              <td key={field} className="p-2">
-                                {csvHeader ? String(row[csvHeader] || '') : ''}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        );
-
       case 'processing':
         return (
-          <div className="text-center py-8">
+          <div className="space-y-4 text-center">
             <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
-            <p className="font-medium">Processing import...</p>
+            <h3 className="font-medium">Processing Import</h3>
             <p className="text-sm text-muted-foreground">Validating {rawData.length} rows</p>
           </div>
         );
@@ -373,6 +288,9 @@ export function CsvImportDialog({ open, onOpenChange, onImport }: CsvImportDialo
 
             <div className="grid grid-cols-2 gap-4">
               <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm text-green-600">Success</CardTitle>
+                </CardHeader>
                 <CardContent className="pt-6">
                   <div className="text-center">
                     <div className="text-2xl font-bold text-green-600">
@@ -384,6 +302,9 @@ export function CsvImportDialog({ open, onOpenChange, onImport }: CsvImportDialo
               </Card>
               
               <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm text-red-600">Errors</CardTitle>
+                </CardHeader>
                 <CardContent className="pt-6">
                   <div className="text-center">
                     <div className="text-2xl font-bold text-red-600">
@@ -420,7 +341,7 @@ export function CsvImportDialog({ open, onOpenChange, onImport }: CsvImportDialo
                       And {importResult.errors.length - 5} more errors...
                     </p>
                   )}
-                  
+
                   <Button
                     variant="outline"
                     size="sm"
@@ -444,19 +365,24 @@ export function CsvImportDialog({ open, onOpenChange, onImport }: CsvImportDialo
         );
 
       default:
-        return null;
+        return <div>Unknown step</div>;
     }
   };
 
   const getStepTitle = () => {
     switch (step) {
       case 'upload': return 'Upload CSV File';
-      case 'preview': return 'Preview & Confirm';
-      case 'mapping': return 'Map Headers to Fields';
+      case 'mapping': return 'Map Headers';
       case 'processing': return 'Processing Import';
       case 'complete': return 'Import Results';
       default: return 'Import Stores';
     }
+  };
+
+  const canProceedFromMapping = () => {
+    // Check if all required fields are mapped
+    const mappedFields = Object.values(headerMapping).filter(Boolean);
+    return REQUIRED_FIELDS.every(field => mappedFields.includes(field));
   };
 
   return (
@@ -466,8 +392,7 @@ export function CsvImportDialog({ open, onOpenChange, onImport }: CsvImportDialo
           <DialogTitle>{getStepTitle()}</DialogTitle>
           <DialogDescription>
             {step === 'upload' && 'Select and upload a CSV file containing store data'}
-            {step === 'preview' && 'Review the data before importing'}
-            {step === 'mapping' && 'Configure how CSV headers map to store fields'}
+            {step === 'mapping' && 'Map your CSV headers to the correct store fields'}
             {step === 'processing' && 'Please wait while we process your import'}
             {step === 'complete' && 'Review the import results'}
           </DialogDescription>
@@ -484,20 +409,12 @@ export function CsvImportDialog({ open, onOpenChange, onImport }: CsvImportDialo
             </Button>
             
             <div className="flex gap-2">
-              {step === 'preview' && (
-                <Button onClick={() => setStep('mapping')} disabled={isProcessing}>
-                  Configure Mapping
-                </Button>
-              )}
-              
               {step === 'mapping' && (
                 <Button 
                   onClick={handleProcessImport} 
-                  disabled={isProcessing || !REQUIRED_FIELDS.every(field => Object.values(headerMapping).includes(field))}
+                  disabled={isProcessing || !canProceedFromMapping()}
                 >
-                  {REQUIRED_FIELDS.every(field => Object.values(headerMapping).includes(field)) 
-                    ? 'Process Import' 
-                    : 'Map Required Fields First'}
+                  Process Import
                 </Button>
               )}
               
