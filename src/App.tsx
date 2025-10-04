@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Users, Building2, Calendar, Settings, MessageCircle, Plus, Upload, CheckCircle, Clock, Send, AlertCircle, BarChart3, Activity as ActivityIcon, Shield, Palette } from 'lucide-react';
+import { Users, Building2, Calendar as CalendarIcon, Settings, MessageCircle, Plus, Upload, CheckCircle, Clock, Send, AlertCircle, BarChart3, Activity as ActivityIcon, Shield, Palette } from 'lucide-react';
 import type { User, Store, Role, Tier } from '@/models/core';
 import type { Activity } from '@/models/planner';
 import { useInitialData } from '@/hooks/useInitialData';
@@ -13,6 +13,7 @@ import { exportDayToWrike, downloadWrikeExport } from '@/lib/export-xlsx';
 import { CsvImportDialog } from '@/components/stores/CsvImportDialog';
 import { UserEditDialog } from '@/components/users/UserEditDialog';
 import { ChatDrawer } from '@/components/chat/ChatDrawer';
+import { Calendar } from '@/components/calendar/Calendar';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { StatusPanel } from '@/components/StatusPanel';
 
@@ -34,7 +35,13 @@ function App() {
       case 'dashboard':
         return <DashboardView users={users || []} stores={stores || []} activities={activities || []} />;
       case 'planner':
-        return <PlannerView activities={activities || []} users={users || []} permissions={permissions} />;
+        return (
+          <PlannerView 
+            activities={activities || []} 
+            users={users || []} 
+            permissions={permissions}
+          />
+        );
       case 'settings-users':
         return <UsersView users={users || []} roles={roles || []} tiers={tiers || []} permissions={permissions} />;
       case 'settings-stores':
@@ -75,7 +82,7 @@ function App() {
                   size="sm"
                   onClick={() => setCurrentView('planner')}
                 >
-                  <Calendar className="h-4 w-4 mr-2" />
+                  <CalendarIcon className="h-4 w-4 mr-2" />
                   Planner
                 </Button>
               </div>
@@ -186,7 +193,7 @@ function DashboardView({ users, stores, activities }: {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Active Campaigns</CardTitle>
-            <Calendar className="h-4 w-4 text-muted-foreground" />
+            <CalendarIcon className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{approvedActivities}</div>
@@ -300,9 +307,6 @@ function PlannerView({ activities, users, permissions }: {
 }) {
   const [exportErrors, setExportErrors] = useState<string[]>([]);
   const { writeAuditLog } = useAuditLog();
-  const isMobile = useIsMobile();
-  
-  const getUserById = (uid: string) => users.find(u => u.uid === uid);
   
   const handleExportToWrike = async () => {
     setExportErrors([]);
@@ -371,218 +375,25 @@ function PlannerView({ activities, users, permissions }: {
     }
   };
   
-  const getActivityIcon = (channel: string) => {
-    switch (channel) {
-      case 'Email': return '📧';
-      case 'Social': return '📱';
-      case 'Banner': return '🎨';
-      case 'Push': return '🔔';
-      default: return '📄';
-    }
+  const handleAddActivity = () => {
+    // Mock add activity functionality
+    console.log('Add activity clicked');
+  };
+
+  const handleDismissErrors = () => {
+    setExportErrors([]);
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">Campaign Planner</h1>
-          <p className="text-muted-foreground">7-day campaign activity scheduler</p>
-        </div>
-        <div className="flex gap-2">
-          {permissions.hasPerm('export:write') && (
-            <Button variant="outline" onClick={handleExportToWrike}>
-              <Upload className="h-4 w-4 mr-2" />
-              Export to Wrike
-            </Button>
-          )}
-          {permissions.hasPerm('planner:write') && (
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Activity
-            </Button>
-          )}
-        </div>
-      </div>
-      
-      {exportErrors.length > 0 && (
-        <Card className="border-red-200 bg-red-50">
-          <CardHeader>
-            <CardTitle className="text-red-800 flex items-center gap-2">
-              <AlertCircle className="h-5 w-5" />
-              Export Blocked - wrikeName Validation Failed
-            </CardTitle>
-            <CardDescription className="text-red-600">
-              Export cannot proceed until all wrikeName issues are resolved. Each user's wrikeName must exactly match their firstName + " " + lastName.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              <div className="text-sm font-medium text-red-800 mb-2">Validation Errors:</div>
-              <ul className="space-y-2 text-sm text-red-700">
-                {exportErrors.map((error, index) => (
-                  <li key={index} className="flex items-start gap-2 p-2 bg-red-100 border border-red-200 rounded">
-                    <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                    <span>• {error}</span>
-                  </li>
-                ))}
-              </ul>
-              
-              <div className="mt-4 p-3 bg-red-100 border border-red-200 rounded">
-                <div className="text-sm font-medium text-red-800 mb-1">Required Action:</div>
-                <div className="text-sm text-red-700">
-                  Go to Settings → Users and update each user's first name and last name so their auto-generated wrikeName matches exactly. 
-                  The export will only proceed when all validation checks pass.
-                </div>
-              </div>
-            </div>
-            
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="mt-3" 
-              onClick={() => setExportErrors([])}
-            >
-              Acknowledge & Dismiss
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-      
-      <Card>
-        <CardContent className={`${isMobile ? 'p-3' : 'p-6'}`}>
-          {/* Desktop: 7-column grid, Mobile: horizontal scroll */}
-          {isMobile ? (
-            <>
-              {/* Mobile: Horizontal scrollable day strip */}
-              <div className="flex gap-3 overflow-x-auto pb-3 mb-4">
-                {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((day, index) => (
-                  <div key={day} className="flex-shrink-0 text-center min-w-20">
-                    <h3 className="font-semibold text-xs text-foreground">{day.substring(0, 3)}</h3>
-                    <p className="text-xs text-muted-foreground">Oct {21 + index}</p>
-                  </div>
-                ))}
-              </div>
-              
-              <div className="flex gap-3 overflow-x-auto">
-                {Array.from({ length: 7 }, (_, dayIndex) => (
-                  <div key={dayIndex} className="flex-shrink-0 w-64 border border-border rounded-md p-2 bg-muted/20 min-h-80">
-                    <div className="space-y-2">
-                      {activities
-                        .filter((_, i) => i % 7 === dayIndex)
-                        .map((activity) => {
-                          const owner = getUserById(activity.ownerUid);
-                          return (
-                            <Card key={activity.activityId} className="p-2 bg-card border border-border cursor-pointer hover:shadow-sm transition-shadow">
-                              <div className="flex flex-col gap-2">
-                                <div className="flex items-center gap-1 flex-wrap">
-                                  <span className="text-xs">{getActivityIcon(activity.channel)}</span>
-                                  <Badge variant="outline" className="text-xs h-5">
-                                    {activity.channel}
-                                  </Badge>
-                                  <Badge 
-                                    variant={
-                                      activity.status === 'draft' ? 'secondary' : 
-                                      activity.status === 'approved' ? 'default' : 'outline'
-                                    }
-                                    className="text-xs h-5"
-                                  >
-                                    {activity.status === 'draft' && <Clock className="h-2 w-2 mr-1" />}
-                                    {activity.status === 'approved' && <CheckCircle className="h-2 w-2 mr-1" />}
-                                    {activity.status === 'exported' && <Send className="h-2 w-2 mr-1" />}
-                                    {activity.status}
-                                  </Badge>
-                                </div>
-                                <p className="text-xs font-medium leading-tight">
-                                  {activity.contentPacket.subjectLine || `${activity.channel} Activity`}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  {owner ? owner.displayName : 'Unassigned'}
-                                </p>
-                                {activity.contentPacket.hashtags && (
-                                  <div className="flex flex-wrap gap-1">
-                                    {activity.contentPacket.hashtags.slice(0, 2).map((tag, i) => (
-                                      <span key={i} className="text-xs text-primary bg-primary/10 px-1 rounded">
-                                        {tag}
-                                      </span>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            </Card>
-                          );
-                        })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </>
-          ) : (
-            <>
-              {/* Desktop: 7-column grid */}
-              <div className="grid grid-cols-7 gap-4 mb-4">
-                {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((day, index) => (
-                  <div key={day} className="text-center">
-                    <h3 className="font-semibold text-sm text-foreground">{day}</h3>
-                    <p className="text-xs text-muted-foreground">Oct {21 + index}</p>
-                  </div>
-                ))}
-              </div>
-              
-              <div className="grid grid-cols-7 gap-4 min-h-96">
-                {Array.from({ length: 7 }, (_, dayIndex) => (
-                  <div key={dayIndex} className="border border-border rounded-md p-2 bg-muted/20 min-h-80">
-                    <div className="space-y-2">
-                      {activities
-                        .filter((_, i) => i % 7 === dayIndex)
-                        .map((activity) => {
-                          const owner = getUserById(activity.ownerUid);
-                          return (
-                            <Card key={activity.activityId} className="p-3 bg-card border border-border cursor-pointer hover:shadow-sm transition-shadow">
-                              <div className="flex items-center gap-2 mb-2">
-                                <span className="text-sm">{getActivityIcon(activity.channel)}</span>
-                                <Badge variant="outline" className="text-xs">
-                                  {activity.channel}
-                                </Badge>
-                                <Badge 
-                                  variant={
-                                    activity.status === 'draft' ? 'secondary' : 
-                                    activity.status === 'approved' ? 'default' : 'outline'
-                                  }
-                                  className="text-xs"
-                                >
-                                  {activity.status === 'draft' && <Clock className="h-3 w-3 mr-1" />}
-                                  {activity.status === 'approved' && <CheckCircle className="h-3 w-3 mr-1" />}  
-                                  {activity.status === 'exported' && <Send className="h-3 w-3 mr-1" />}
-                                  {activity.status}
-                                </Badge>
-                              </div>
-                              <p className="text-sm font-medium mb-1">
-                                {activity.contentPacket.subjectLine || `${activity.channel} Activity`}
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                {owner ? owner.displayName : 'Unassigned'}
-                              </p>
-                              {activity.contentPacket.hashtags && (
-                                <div className="flex flex-wrap gap-1 mt-2">
-                                  {activity.contentPacket.hashtags.slice(0, 2).map((tag, i) => (
-                                    <span key={i} className="text-xs text-primary bg-primary/10 px-1 rounded">
-                                      {tag}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                            </Card>
-                          );
-                        })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+    <Calendar
+      activities={activities}
+      users={users}
+      permissions={permissions}
+      onExportToWrike={handleExportToWrike}
+      onAddActivity={handleAddActivity}
+      exportErrors={exportErrors}
+      onDismissErrors={handleDismissErrors}
+    />
   );
 }
 
