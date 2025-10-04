@@ -4,8 +4,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { MessageCircle, Send, Bot, User, AlertTriangle, CheckCircle, X } from 'lucide-react';
+import { Separator } from '@/components/ui/separator';
+import { MessageCircle, Send, Bot, User, AlertTriangle, CheckCircle, X, Shield, Clock, Activity } from 'lucide-react';
 import { useAuditLog, AUDIT_ACTIONS } from '@/lib/audit';
+import { useIsMobile } from '@/hooks/use-mobile';
+import type { User as UserType, Role, Tier } from '@/models/core';
+import { useCurrentUserPermissions } from '@/hooks/usePermissions';
 
 interface ChatMessage {
   id: string;
@@ -28,23 +32,44 @@ interface SimulationResult {
 interface ChatDrawerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  currentUser?: UserType | null;
+  roles?: Role[];
+  tiers?: Tier[];
 }
 
-export function ChatDrawer({ open, onOpenChange }: ChatDrawerProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: '1',
-      role: 'assistant',
-      content: 'Hi! I\'m Vizzy, your AI marketing assistant. I can help you with:\n\n• `/simulate` - Run campaign simulations\n• `/set` - Update governance rules (Admin only)\n• `/status` - Check system health\n• `/export` - Export activities to Wrike\n\nWhat would you like to do?',
-      timestamp: new Date(),
-      type: 'system'
-    }
-  ]);
+export function ChatDrawer({ open, onOpenChange, currentUser, roles = [], tiers = [] }: ChatDrawerProps) {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [pendingSimulation, setPendingSimulation] = useState<SimulationResult | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { writeAuditLog } = useAuditLog();
+  const isMobile = useIsMobile();
+  const permissions = useCurrentUserPermissions(currentUser || null, roles, tiers);
+
+  // Initialize chat with welcome message
+  useEffect(() => {
+    if (open && messages.length === 0) {
+      const welcomeCommands = [
+        '• `/simulate [description]` - Run campaign simulations',
+        '• `/status` - Check system health',
+        '• `/export [period]` - Export activities to Wrike'
+      ];
+
+      // Add /set command only for admins
+      if (permissions.hasPerm('roles:write')) {
+        welcomeCommands.splice(1, 0, '• `/set [rule]` - Update governance rules (Admin only)');
+      }
+
+      setMessages([{
+        id: '1',
+        role: 'assistant',
+        content: `Hi ${currentUser?.displayName || 'there'}! I'm Vizzy, your AI marketing assistant. I can help you with:\n\n${welcomeCommands.join('\n')}\n\nWhat would you like to do?`,
+        timestamp: new Date(),
+        type: 'system'
+      }]);
+    }
+  }, [open, messages.length, currentUser?.displayName, permissions]);
 
   useEffect(() => {
     if (messagesEndRef.current) {
@@ -62,6 +87,16 @@ export function ChatDrawer({ open, onOpenChange }: ChatDrawerProps) {
   };
 
   const handleSimulateCommand = async (prompt: string) => {
+    // Check simulation permission
+    if (!permissions.hasPerm('planner:write')) {
+      addMessage({
+        role: 'assistant',
+        content: 'Permission denied. You need planner write permissions to run simulations.',
+        type: 'error'
+      });
+      return;
+    }
+
     setIsProcessing(true);
     
     // Mock AI simulation with delay
@@ -69,8 +104,19 @@ export function ChatDrawer({ open, onOpenChange }: ChatDrawerProps) {
       const simulationResult: SimulationResult = {
         change: prompt,
         diff: {
-          before: { status: 'draft', schedule: 'Wednesday' },
-          after: { status: 'draft', schedule: 'Tuesday 10:00 AM' }
+          before: { 
+            status: 'draft', 
+            schedule: 'Wednesday 2:00 PM',
+            channel: 'Email',
+            assignee: 'Current User'
+          },
+          after: { 
+            status: 'draft', 
+            schedule: 'Tuesday 10:00 AM',
+            channel: 'Email',
+            assignee: 'Current User',
+            priority: 'High'
+          }
         },
         needsApproval: true
       };
@@ -79,14 +125,14 @@ export function ChatDrawer({ open, onOpenChange }: ChatDrawerProps) {
       
       addMessage({
         role: 'assistant',
-        content: `I've analyzed your request: "${prompt}"\n\nHere's what would change:`,
+        content: `I've analyzed your simulation request: "${prompt}"\n\n📊 **Simulation Complete**\nThis change requires approval before applying to your campaign planner.`,
         type: 'simulation',
         data: simulationResult
       });
       
       // Log simulation run
       await writeAuditLog({
-        userId: 'u_1',
+        userId: currentUser?.uid || 'unknown',
         action: AUDIT_ACTIONS.AI_SIMULATE_RUN,
         targetId: 'simulation_' + Date.now(),
         source: 'chat',
@@ -98,13 +144,11 @@ export function ChatDrawer({ open, onOpenChange }: ChatDrawerProps) {
   };
 
   const handleSetCommand = async (rule: string) => {
-    // Check if user is admin (mock check)
-    const isAdmin = true; // In real app, check user permissions
-    
-    if (!isAdmin) {
+    // Check admin permission for governance rules
+    if (!permissions.hasPerm('roles:write')) {
       addMessage({
         role: 'assistant',
-        content: 'Permission denied. Only administrators can use the `/set` command.',
+        content: '🔒 **Permission Denied**\n\nOnly administrators can use the `/set` command to update governance rules.\n\nCurrent permissions: ' + Array.from(permissions.effective).join(', '),
         type: 'error'
       });
       return;
@@ -115,17 +159,17 @@ export function ChatDrawer({ open, onOpenChange }: ChatDrawerProps) {
     setTimeout(async () => {
       addMessage({
         role: 'assistant',
-        content: `Governance rule updated: ${rule}\n\nThe new rule is now active and will be enforced for all future activities.`,
+        content: `✅ **Governance Rule Updated**\n\nRule: ${rule}\n\nThe new rule is now active and will be enforced for all future activities. All team members will be notified of this change.`,
         type: 'rule'
       });
       
       // Log rule set
       await writeAuditLog({
-        userId: 'u_1',
+        userId: currentUser?.uid || 'unknown',
         action: AUDIT_ACTIONS.AI_RULE_SET,
         targetId: 'governance_rule',
         source: 'chat',
-        after: { rule, timestamp: new Date().toISOString() }
+        after: { rule, timestamp: new Date().toISOString(), setBy: currentUser?.displayName }
       });
       
       setIsProcessing(false);
@@ -142,19 +186,22 @@ export function ChatDrawer({ open, onOpenChange }: ChatDrawerProps) {
         wrikeNameCompliance: '100%',
         activeUsers: 3,
         draftActivities: 2,
-        approvedActivities: 3
+        approvedActivities: 3,
+        userRole: roles.find(r => r.roleId === currentUser?.roleId)?.name || 'Unknown',
+        userTier: tiers.find(t => t.tierId === currentUser?.tierId)?.name || 'Unknown',
+        effectivePermissions: Array.from(permissions.effective)
       };
       
       addMessage({
         role: 'assistant',
-        content: 'System Status Report:\n\n• System Health: ✅ Operational\n• Last Export: 2 hours ago\n• wrikeName Compliance: 100%\n• Active Users: 3\n• Draft Activities: 2\n• Approved Activities: 3\n\nAll systems functioning normally.',
+        content: `📊 **System Status Report**\n\n**System Health**\n• Status: ${statusInfo.system === 'Operational' ? '✅' : '❌'} ${statusInfo.system}\n• Last Export: ${statusInfo.lastExport}\n• wrikeName Compliance: ${statusInfo.wrikeNameCompliance}\n\n**Activity Overview**\n• Active Users: ${statusInfo.activeUsers}\n• Draft Activities: ${statusInfo.draftActivities}\n• Approved Activities: ${statusInfo.approvedActivities}\n\n**Your Access Level**\n• Role: ${statusInfo.userRole}\n• Tier: ${statusInfo.userTier}\n• Permissions: ${statusInfo.effectivePermissions.length} active\n\nAll systems functioning normally.`,
         type: 'status',
         data: statusInfo
       });
       
       // Log status request
       await writeAuditLog({
-        userId: 'u_1',  
+        userId: currentUser?.uid || 'unknown',
         action: AUDIT_ACTIONS.AI_STATUS_REQUESTED,
         targetId: 'system_status',
         source: 'chat'
@@ -165,21 +212,40 @@ export function ChatDrawer({ open, onOpenChange }: ChatDrawerProps) {
   };
 
   const handleExportCommand = async (period: string) => {
+    // Check export permission
+    if (!permissions.hasPerm('export:write')) {
+      addMessage({
+        role: 'assistant',
+        content: '🔒 **Permission Denied**\n\nYou need export write permissions to trigger exports.\n\nContact your administrator to request access.',
+        type: 'error'
+      });
+      return;
+    }
+
     setIsProcessing(true);
     
     setTimeout(async () => {
+      const exportResult = {
+        period,
+        status: 'success',
+        fileName: `${period}_export_${new Date().toISOString().split('T')[0]}.xlsx`,
+        activitiesExported: 12,
+        warnings: []
+      };
+
       addMessage({
         role: 'assistant',
-        content: `Export initiated for ${period}.\n\nChecking wrikeName validation for all assigned users... ✅\nGenerating XLSX file... ✅\n\nExport complete! The file has been downloaded to your device.`,
+        content: `📤 **Export Complete**\n\nPeriod: ${period}\nFile: ${exportResult.fileName}\nActivities: ${exportResult.activitiesExported} exported\n\n✅ wrikeName validation passed\n✅ XLSX file generated\n✅ Export logged to audit trail\n\nThe file has been downloaded to your device.`,
         type: 'export'
       });
       
       // Log export trigger
       await writeAuditLog({
-        userId: 'u_1',
+        userId: currentUser?.uid || 'unknown',
         action: AUDIT_ACTIONS.AI_EXPORT_TRIGGERED,
         targetId: period,
-        source: 'chat'
+        source: 'chat',
+        after: exportResult
       });
       
       setIsProcessing(false);
@@ -189,15 +255,25 @@ export function ChatDrawer({ open, onOpenChange }: ChatDrawerProps) {
   const handleApproveSimulation = async () => {
     if (!pendingSimulation) return;
     
+    // Check approval permission
+    if (!permissions.hasPerm('planner:approve')) {
+      addMessage({
+        role: 'assistant',
+        content: '🔒 **Approval Permission Required**\n\nYou need approval permissions to commit simulation changes.\n\nPlease ask a Manager or Administrator to review this simulation.',
+        type: 'error'
+      });
+      return;
+    }
+    
     addMessage({
       role: 'assistant',
-      content: `✅ Simulation approved and changes have been applied.\n\nThe requested changes are now live in your campaign planner.`,
+      content: `✅ **Simulation Approved & Applied**\n\nChanges have been committed to your campaign planner:\n• Schedule updated\n• Priority adjusted\n• Audit trail logged\n\nAll team members with access will see the updated campaign data.`,
       type: 'system'
     });
     
     // Log simulation approval
     await writeAuditLog({
-      userId: 'u_1',
+      userId: currentUser?.uid || 'unknown',
       action: AUDIT_ACTIONS.AI_SIMULATE_APPROVED,
       targetId: 'simulation_approved',
       source: 'chat',
@@ -219,30 +295,99 @@ export function ChatDrawer({ open, onOpenChange }: ChatDrawerProps) {
   };
 
   const processCommand = async (input: string) => {
-    if (input.startsWith('/simulate ')) {
-      const prompt = input.substring(10);
+    const trimmed = input.trim();
+    
+    if (trimmed.startsWith('/simulate ')) {
+      const prompt = trimmed.substring(10).trim();
+      if (!prompt) {
+        addMessage({
+          role: 'assistant',
+          content: '⚠️ **Missing Simulation Description**\n\nPlease provide a description of what you want to simulate.\n\nExample: `/simulate Move Sneakerheads email to Tuesday 10am`',
+          type: 'error'
+        });
+        return;
+      }
       await handleSimulateCommand(prompt);
-    } else if (input.startsWith('/set ')) {
-      const rule = input.substring(5);
+    } else if (trimmed.startsWith('/set ')) {
+      const rule = trimmed.substring(5).trim();
+      if (!rule) {
+        addMessage({
+          role: 'assistant',
+          content: '⚠️ **Missing Rule Definition**\n\nPlease provide a rule to set.\n\nExample: `/set cadence Sneakerheads max 5 per week`',
+          type: 'error'
+        });
+        return;
+      }
       await handleSetCommand(rule);
-    } else if (input === '/status') {
+    } else if (trimmed === '/status') {
       await handleStatusCommand();
-    } else if (input.startsWith('/export ')) {
-      const period = input.substring(8);
+    } else if (trimmed.startsWith('/export ')) {
+      const period = trimmed.substring(8).trim();
+      if (!period) {
+        addMessage({
+          role: 'assistant',
+          content: '⚠️ **Missing Export Period**\n\nPlease specify what to export.\n\nExamples:\n• `/export week` - Export current week\n• `/export today` - Export today\n• `/export tuesday` - Export specific day',
+          type: 'error'
+        });
+        return;
+      }
       await handleExportCommand(period);
-    } else if (input.startsWith('/')) {
+    } else if (trimmed.startsWith('/')) {
+      const availableCommands = [
+        '• `/simulate [description]` - Run campaign simulations',
+        '• `/status` - Check system health',
+        '• `/export [period]` - Export activities to Wrike'
+      ];
+
+      // Add /set command only for admins
+      if (permissions.hasPerm('roles:write')) {
+        availableCommands.splice(1, 0, '• `/set [rule]` - Update governance rules (Admin only)');
+      }
+
       addMessage({
         role: 'assistant',
-        content: 'Unknown command. Available commands:\n\n• `/simulate [description]` - Run campaign simulations\n• `/set [rule]` - Update governance rules (Admin only)\n• `/status` - Check system health\n• `/export [period]` - Export activities to Wrike',
+        content: `❓ **Unknown Command**\n\nI don't recognize that command. Available commands:\n\n${availableCommands.join('\n')}\n\nTry typing one of these commands or ask me a question!`,
         type: 'error'
       });
     } else {
-      // Regular chat message
-      addMessage({
-        role: 'assistant',
-        content: `I understand you're asking about: "${input}"\n\nFor now, I work best with specific commands. Try using:\n• \`/simulate\` to run campaign scenarios\n• \`/status\` to check system health\n• \`/export\` to generate Wrike files\n\nWhat would you like to do?`,
-        type: 'system'
-      });
+      // Regular chat message - enhanced natural language processing
+      const lowercaseInput = trimmed.toLowerCase();
+      
+      if (lowercaseInput.includes('help') || lowercaseInput.includes('what can you do')) {
+        const availableCommands = [
+          '• `/simulate [description]` - Run campaign simulations',
+          '• `/status` - Check system health',
+          '• `/export [period]` - Export activities to Wrike'
+        ];
+
+        if (permissions.hasPerm('roles:write')) {
+          availableCommands.splice(1, 0, '• `/set [rule]` - Update governance rules (Admin only)');
+        }
+
+        addMessage({
+          role: 'assistant',
+          content: `🤖 **I'm here to help!**\n\nI can assist you with:\n\n${availableCommands.join('\n')}\n\nI'm designed to work with specific commands for security and accuracy. What would you like to do?`,
+          type: 'system'
+        });
+      } else if (lowercaseInput.includes('status') || lowercaseInput.includes('health')) {
+        addMessage({
+          role: 'assistant',
+          content: '💡 **System Status Available**\n\nTo check system health, use the `/status` command. This will show you:\n• System operational status\n• Recent export activity\n• User and activity counts\n• Your current permissions\n\nTry typing `/status` now!',
+          type: 'system'
+        });
+      } else if (lowercaseInput.includes('export') || lowercaseInput.includes('wrike')) {
+        addMessage({
+          role: 'assistant',
+          content: '📤 **Export Commands Available**\n\nTo export activities to Wrike, use:\n• `/export week` - Export current week\n• `/export today` - Export today\n• `/export tuesday` - Export specific day\n\nNote: You need export permissions to use this feature.',
+          type: 'system'
+        });
+      } else {
+        addMessage({
+          role: 'assistant',
+          content: `💬 I understand you're asking about: "${trimmed}"\n\n🎯 **For the best results, please use specific commands:**\n• Type \`/status\` to check system health\n• Type \`/simulate [description]\` to run scenarios\n• Type \`/export [period]\` to generate files\n\nWhat would you like to do?`,
+          type: 'system'
+        });
+      }
     }
   };
 
@@ -280,21 +425,25 @@ export function ChatDrawer({ open, onOpenChange }: ChatDrawerProps) {
           {isUser ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
         </div>
         
-        <div className={`flex-1 ${isUser ? 'text-right' : ''}`}>
-          <div className={`inline-block max-w-[80%] p-3 rounded-lg ${
+        <div className={`flex-1 ${isUser ? 'text-right' : ''} ${isMobile ? 'min-w-0' : ''}`}>
+          <div className={`inline-block ${isMobile ? 'max-w-[85%]' : 'max-w-[80%]'} p-3 rounded-lg ${
             isUser 
               ? 'bg-primary text-primary-foreground' 
+              : message.type === 'error'
+              ? 'bg-red-50 border border-red-200 text-red-800'
+              : message.type === 'system'
+              ? 'bg-blue-50 border border-blue-200 text-blue-800'
               : 'bg-muted text-muted-foreground'
           }`}>
-            <div className="whitespace-pre-wrap text-sm">
+            <div className={`whitespace-pre-wrap ${isMobile ? 'text-xs' : 'text-sm'}`}>
               {message.content}
             </div>
           </div>
           
           {message.type === 'simulation' && message.data && pendingSimulation && (
-            <Card className="mt-3 max-w-md">
+            <Card className={`mt-3 ${isMobile ? 'max-w-full' : 'max-w-md'}`}>
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm flex items-center gap-2">
+                <CardTitle className={`${isMobile ? 'text-xs' : 'text-sm'} flex items-center gap-2`}>
                   <AlertTriangle className="h-4 w-4 text-yellow-500" />
                   Simulation Results
                 </CardTitle>
@@ -303,48 +452,88 @@ export function ChatDrawer({ open, onOpenChange }: ChatDrawerProps) {
                 </CardDescription>
               </CardHeader>
               <CardContent className="pt-0">
-                <div className="space-y-3 text-xs">
-                  <div>
-                    <span className="font-medium text-red-600">Before:</span>
-                    <pre className="bg-red-50 p-2 rounded mt-1 text-xs">
-                      {JSON.stringify(message.data.diff.before, null, 2)}
-                    </pre>
+                <div className={`space-y-3 ${isMobile ? 'text-xs' : 'text-sm'}`}>
+                  {/* Enhanced Diff Display */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                      <Clock className="h-3 w-3" />
+                      Before → After
+                    </div>
+                    
+                    <div className="grid grid-cols-1 gap-2">
+                      <div className="border border-red-200 rounded-md bg-red-25 p-2">
+                        <div className="flex items-center gap-1 mb-1">
+                          <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                          <span className="text-xs font-medium text-red-700">Current State</span>
+                        </div>
+                        <div className="space-y-1">
+                          {Object.entries(message.data.diff.before).map(([key, value]) => (
+                            <div key={key} className="flex justify-between text-xs">
+                              <span className="font-medium text-red-600">{key}:</span>
+                              <span className="text-red-800">{String(value)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      
+                      <div className="border border-green-200 rounded-md bg-green-25 p-2">
+                        <div className="flex items-center gap-1 mb-1">
+                          <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                          <span className="text-xs font-medium text-green-700">Proposed State</span>
+                        </div>
+                        <div className="space-y-1">
+                          {Object.entries(message.data.diff.after).map(([key, value]) => (
+                            <div key={key} className="flex justify-between text-xs">
+                              <span className="font-medium text-green-600">{key}:</span>
+                              <span className="text-green-800">{String(value)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <span className="font-medium text-green-600">After:</span>
-                    <pre className="bg-green-50 p-2 rounded mt-1 text-xs">
-                      {JSON.stringify(message.data.diff.after, null, 2)}
-                    </pre>
+                  
+                  <Separator />
+                  
+                  <div className="flex gap-2">
+                    <Button 
+                      size="sm" 
+                      onClick={handleApproveSimulation}
+                      className="flex-1"
+                      disabled={!permissions.hasPerm('planner:approve')}
+                    >
+                      <CheckCircle className="h-3 w-3 mr-1" />
+                      {permissions.hasPerm('planner:approve') ? 'Approve' : 'Need Approval Permission'}
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={handleRejectSimulation}
+                      className="flex-1"
+                    >
+                      <X className="h-3 w-3 mr-1" />
+                      Reject
+                    </Button>
                   </div>
-                </div>
-                
-                <div className="flex gap-2 mt-4">
-                  <Button 
-                    size="sm" 
-                    onClick={handleApproveSimulation}
-                    className="flex-1"
-                  >
-                    <CheckCircle className="h-3 w-3 mr-1" />
-                    Approve
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={handleRejectSimulation}
-                    className="flex-1"
-                  >
-                    <X className="h-3 w-3 mr-1" />
-                    Reject
-                  </Button>
+                  
+                  {!permissions.hasPerm('planner:approve') && (
+                    <div className="flex items-center gap-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-800">
+                      <Shield className="h-3 w-3" />
+                      Manager or Admin approval required to commit changes
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
           )}
           
-          <div className="text-xs text-muted-foreground mt-1">
-            {message.timestamp.toLocaleTimeString()}
+          <div className={`${isMobile ? 'text-xs' : 'text-xs'} text-muted-foreground mt-1 flex items-center gap-2`}>
+            <span>{message.timestamp.toLocaleTimeString()}</span>
             {message.type && (
-              <Badge variant="outline" className="ml-2 text-xs">
+              <Badge variant="outline" className="text-xs">
+                {message.type === 'simulation' && <Activity className="h-2 w-2 mr-1" />}
+                {message.type === 'error' && <AlertTriangle className="h-2 w-2 mr-1" />}
+                {message.type === 'rule' && <Shield className="h-2 w-2 mr-1" />}
                 {message.type}
               </Badge>
             )}
@@ -356,20 +545,25 @@ export function ChatDrawer({ open, onOpenChange }: ChatDrawerProps) {
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange}>
-      <DrawerContent className="h-[80vh]">
-        <DrawerHeader>
+      <DrawerContent className={`${isMobile ? 'h-[85vh]' : 'h-[80vh]'}`}>
+        <DrawerHeader className={`${isMobile ? 'pb-2' : ''}`}>
           <DrawerTitle className="flex items-center gap-2">
             <MessageCircle className="h-5 w-5" />
             Vizzy AI Assistant
+            {currentUser && (
+              <Badge variant="outline" className="text-xs ml-auto">
+                {roles.find(r => r.roleId === currentUser.roleId)?.name || 'User'}
+              </Badge>
+            )}
           </DrawerTitle>
-          <DrawerDescription>
+          <DrawerDescription className={`${isMobile ? 'text-xs' : ''}`}>
             Your intelligent marketing campaign assistant
           </DrawerDescription>
         </DrawerHeader>
         
-        <div className="flex-1 overflow-hidden flex flex-col px-4">
+        <div className={`flex-1 overflow-hidden flex flex-col ${isMobile ? 'px-2' : 'px-4'}`}>
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto space-y-4 pb-4">
+          <div className={`flex-1 overflow-y-auto space-y-4 ${isMobile ? 'pb-2' : 'pb-4'}`}>
             {messages.map(renderMessage)}
             
             {isProcessing && (
@@ -379,7 +573,7 @@ export function ChatDrawer({ open, onOpenChange }: ChatDrawerProps) {
                 </div>
                 <div className="flex-1">
                   <div className="inline-block bg-muted text-muted-foreground p-3 rounded-lg">
-                    <div className="flex items-center gap-2 text-sm">
+                    <div className={`flex items-center gap-2 ${isMobile ? 'text-xs' : 'text-sm'}`}>
                       <div className="animate-spin h-3 w-3 border-2 border-primary border-t-transparent rounded-full"></div>
                       Vizzy is thinking...
                     </div>
@@ -392,15 +586,15 @@ export function ChatDrawer({ open, onOpenChange }: ChatDrawerProps) {
           </div>
           
           {/* Input */}
-          <div className="border-t pt-4 pb-4">
+          <div className={`border-t ${isMobile ? 'pt-2 pb-2' : 'pt-4 pb-4'}`}>
             <div className="flex gap-2">
               <Input
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyPress={handleKeyPress}
-                placeholder="Type a command or message... (try /status)"
+                placeholder={isMobile ? "Type command..." : "Type a command or message... (try /status)"}
                 disabled={isProcessing}
-                className="flex-1"
+                className={`flex-1 ${isMobile ? 'text-sm' : ''}`}
               />
               <Button 
                 onClick={handleSendMessage}
@@ -411,17 +605,49 @@ export function ChatDrawer({ open, onOpenChange }: ChatDrawerProps) {
               </Button>
             </div>
             
-            <div className="flex flex-wrap gap-1 mt-2">
-              <Badge variant="outline" className="text-xs cursor-pointer" onClick={() => setInputValue('/status')}>
+            {/* Quick Command Buttons */}
+            <div className={`flex flex-wrap gap-1 ${isMobile ? 'mt-1' : 'mt-2'}`}>
+              <Badge 
+                variant="outline" 
+                className={`${isMobile ? 'text-xs px-2 py-1' : 'text-xs'} cursor-pointer hover:bg-secondary`} 
+                onClick={() => setInputValue('/status')}
+              >
                 /status
               </Badge>
-              <Badge variant="outline" className="text-xs cursor-pointer" onClick={() => setInputValue('/simulate ')}>
+              <Badge 
+                variant="outline" 
+                className={`${isMobile ? 'text-xs px-2 py-1' : 'text-xs'} cursor-pointer hover:bg-secondary`} 
+                onClick={() => setInputValue('/simulate ')}
+              >
                 /simulate
               </Badge>
-              <Badge variant="outline" className="text-xs cursor-pointer" onClick={() => setInputValue('/export week')}>
-                /export
-              </Badge>
+              {permissions.hasPerm('export:write') && (
+                <Badge 
+                  variant="outline" 
+                  className={`${isMobile ? 'text-xs px-2 py-1' : 'text-xs'} cursor-pointer hover:bg-secondary`} 
+                  onClick={() => setInputValue('/export week')}
+                >
+                  /export
+                </Badge>
+              )}
+              {permissions.hasPerm('roles:write') && (
+                <Badge 
+                  variant="outline" 
+                  className={`${isMobile ? 'text-xs px-2 py-1' : 'text-xs'} cursor-pointer hover:bg-secondary`} 
+                  onClick={() => setInputValue('/set ')}
+                >
+                  /set
+                </Badge>
+              )}
             </div>
+            
+            {/* Permission Status */}
+            {isMobile && currentUser && (
+              <div className="flex items-center gap-1 mt-2 text-xs text-muted-foreground">
+                <Shield className="h-3 w-3" />
+                <span>{permissions.effective.size} permissions active</span>
+              </div>
+            )}
           </div>
         </div>
       </DrawerContent>

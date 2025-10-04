@@ -13,6 +13,7 @@ import { exportDayToWrike, downloadWrikeExport } from '@/lib/export-xlsx';
 import { CsvImportDialog } from '@/components/stores/CsvImportDialog';
 import { UserEditDialog } from '@/components/users/UserEditDialog';
 import { ChatDrawer } from '@/components/chat/ChatDrawer';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 type View = 'dashboard' | 'planner' | 'settings-users' | 'settings-stores' | 'settings-theme' | 'settings-roles';
 
@@ -21,6 +22,7 @@ function App() {
   const [showChatDrawer, setShowChatDrawer] = useState(false);
   const { users, stores, roles, tiers, activities, setUsers, setStores, setActivities } = useInitialData();
   const { writeAuditLog } = useAuditLog();
+  const isMobile = useIsMobile();
   
   // Mock current user - in production this would come from auth
   const currentUser = users?.[0] || null; // Use first user (Maggie, Admin) as current user
@@ -53,9 +55,11 @@ function App() {
             <div className="flex items-center gap-8">
               <div className="flex items-center gap-2">
                 <div className="h-8 w-8 rounded bg-primary"></div>
-                <span className="text-xl font-bold text-foreground">Vizzy.app</span>
+                <span className={`${isMobile ? 'text-lg' : 'text-xl'} font-bold text-foreground`}>
+                  {isMobile ? 'Vizzy' : 'Vizzy.app'}
+                </span>
               </div>
-              <div className="hidden md:flex items-center gap-1">
+              <div className={`${isMobile ? 'hidden' : 'flex'} items-center gap-1`}>
                 <Button 
                   variant={currentView === 'dashboard' ? 'default' : 'ghost'}
                   size="sm"
@@ -75,7 +79,7 @@ function App() {
             </div>
             <div className="flex items-center gap-2">
               {currentUser && (
-                <div className="hidden sm:flex items-center gap-2 text-sm text-muted-foreground">
+                <div className={`${isMobile ? 'hidden' : 'flex'} items-center gap-2 text-sm text-muted-foreground`}>
                   <span>{currentUser.displayName}</span>
                   <Badge variant="outline" className="text-xs">
                     {roles?.find(r => r.roleId === currentUser.roleId)?.name}
@@ -85,30 +89,65 @@ function App() {
                   </Badge>
                 </div>
               )}
-              <Button variant="ghost" size="sm" onClick={() => setShowChatDrawer(true)}>
-                <MessageCircle className="h-4 w-4 mr-2" />
-                Vizzy
-              </Button>
+              {!isMobile && (
+                <Button variant="ghost" size="sm" onClick={() => setShowChatDrawer(true)}>
+                  <MessageCircle className="h-4 w-4 mr-2" />
+                  Vizzy
+                </Button>
+              )}
               <Button 
                 variant={currentView.startsWith('settings') ? 'default' : 'ghost'}
                 size="sm"
                 onClick={() => setCurrentView('settings-users')}
               >
                 <Settings className="h-4 w-4 mr-2" />
-                Settings
+                {isMobile ? '' : 'Settings'}
               </Button>
             </div>
           </div>
         </div>
       </nav>
 
-      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      <main className={`mx-auto max-w-7xl px-4 ${isMobile ? 'py-4' : 'py-8'} sm:px-6 lg:px-8`}>
+        {/* Mobile Navigation Pills */}
+        {isMobile && (
+          <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
+            <Button
+              variant={currentView === 'dashboard' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setCurrentView('dashboard')}
+              className="flex-shrink-0"
+            >
+              Dashboard
+            </Button>
+            <Button
+              variant={currentView === 'planner' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setCurrentView('planner')}
+              className="flex-shrink-0"
+            >
+              Planner
+            </Button>
+            <Button
+              variant={currentView.startsWith('settings') ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setCurrentView('settings-users')}
+              className="flex-shrink-0"
+            >
+              Settings
+            </Button>
+          </div>
+        )}
+        
         {renderView()}
       </main>
 
       <ChatDrawer 
         open={showChatDrawer}
         onOpenChange={setShowChatDrawer}
+        currentUser={currentUser}
+        roles={roles}
+        tiers={tiers}
       />
 
       {/* Floating Action Button for Chat */}
@@ -258,6 +297,7 @@ function PlannerView({ activities, users, permissions }: {
 }) {
   const [exportErrors, setExportErrors] = useState<string[]>([]);
   const { writeAuditLog } = useAuditLog();
+  const isMobile = useIsMobile();
   
   const getUserById = (uid: string) => users.find(u => u.uid === uid);
   
@@ -374,69 +414,137 @@ function PlannerView({ activities, users, permissions }: {
       )}
       
       <Card>
-        <CardContent className="p-6">
-          <div className="grid grid-cols-7 gap-4 mb-4">
-            {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((day, index) => (
-              <div key={day} className="text-center">
-                <h3 className="font-semibold text-sm text-foreground">{day}</h3>
-                <p className="text-xs text-muted-foreground">Oct {21 + index}</p>
+        <CardContent className={`${isMobile ? 'p-3' : 'p-6'}`}>
+          {/* Desktop: 7-column grid, Mobile: horizontal scroll */}
+          {isMobile ? (
+            <>
+              {/* Mobile: Horizontal scrollable day strip */}
+              <div className="flex gap-3 overflow-x-auto pb-3 mb-4">
+                {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((day, index) => (
+                  <div key={day} className="flex-shrink-0 text-center min-w-20">
+                    <h3 className="font-semibold text-xs text-foreground">{day.substring(0, 3)}</h3>
+                    <p className="text-xs text-muted-foreground">Oct {21 + index}</p>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          
-          <div className="grid grid-cols-7 gap-4 min-h-96">
-            {Array.from({ length: 7 }, (_, dayIndex) => (
-              <div key={dayIndex} className="border border-border rounded-md p-2 bg-muted/20 min-h-80">
-                <div className="space-y-2">
-                  {activities
-                    .filter((_, i) => i % 7 === dayIndex) // Distribute activities across days for demo
-                    .map((activity) => {
-                      const owner = getUserById(activity.ownerUid);
-                      return (
-                        <Card key={activity.activityId} className="p-3 bg-card border border-border cursor-pointer hover:shadow-sm transition-shadow">
-                          <div className="flex items-center gap-2 mb-2">
-                            <span className="text-sm">{getActivityIcon(activity.channel)}</span>
-                            <Badge 
-                              variant="outline" 
-                              className="text-xs"
-                            >
-                              {activity.channel}
-                            </Badge>
-                            <Badge 
-                              variant={
-                                activity.status === 'draft' ? 'secondary' : 
-                                activity.status === 'approved' ? 'default' : 'outline'
-                              }
-                              className="text-xs"
-                            >
-                              {activity.status === 'draft' && <Clock className="h-3 w-3 mr-1" />}
-                              {activity.status === 'approved' && <CheckCircle className="h-3 w-3 mr-1" />}
-                              {activity.status === 'exported' && <Send className="h-3 w-3 mr-1" />}
-                              {activity.status}
-                            </Badge>
-                          </div>
-                          <p className="text-sm font-medium mb-1">
-                            {activity.contentPacket.subjectLine || `${activity.channel} Activity`}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {owner ? owner.displayName : 'Unassigned'}
-                          </p>
-                          {activity.contentPacket.hashtags && (
-                            <div className="flex flex-wrap gap-1 mt-2">
-                              {activity.contentPacket.hashtags.slice(0, 2).map((tag, i) => (
-                                <span key={i} className="text-xs text-primary bg-primary/10 px-1 rounded">
-                                  {tag}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </Card>
-                      );
-                    })}
-                </div>
+              
+              <div className="flex gap-3 overflow-x-auto">
+                {Array.from({ length: 7 }, (_, dayIndex) => (
+                  <div key={dayIndex} className="flex-shrink-0 w-64 border border-border rounded-md p-2 bg-muted/20 min-h-80">
+                    <div className="space-y-2">
+                      {activities
+                        .filter((_, i) => i % 7 === dayIndex)
+                        .map((activity) => {
+                          const owner = getUserById(activity.ownerUid);
+                          return (
+                            <Card key={activity.activityId} className="p-2 bg-card border border-border cursor-pointer hover:shadow-sm transition-shadow">
+                              <div className="flex flex-col gap-2">
+                                <div className="flex items-center gap-1 flex-wrap">
+                                  <span className="text-xs">{getActivityIcon(activity.channel)}</span>
+                                  <Badge variant="outline" className="text-xs h-5">
+                                    {activity.channel}
+                                  </Badge>
+                                  <Badge 
+                                    variant={
+                                      activity.status === 'draft' ? 'secondary' : 
+                                      activity.status === 'approved' ? 'default' : 'outline'
+                                    }
+                                    className="text-xs h-5"
+                                  >
+                                    {activity.status === 'draft' && <Clock className="h-2 w-2 mr-1" />}
+                                    {activity.status === 'approved' && <CheckCircle className="h-2 w-2 mr-1" />}
+                                    {activity.status === 'exported' && <Send className="h-2 w-2 mr-1" />}
+                                    {activity.status}
+                                  </Badge>
+                                </div>
+                                <p className="text-xs font-medium leading-tight">
+                                  {activity.contentPacket.subjectLine || `${activity.channel} Activity`}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  {owner ? owner.displayName : 'Unassigned'}
+                                </p>
+                                {activity.contentPacket.hashtags && (
+                                  <div className="flex flex-wrap gap-1">
+                                    {activity.contentPacket.hashtags.slice(0, 2).map((tag, i) => (
+                                      <span key={i} className="text-xs text-primary bg-primary/10 px-1 rounded">
+                                        {tag}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </Card>
+                          );
+                        })}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </>
+          ) : (
+            <>
+              {/* Desktop: 7-column grid */}
+              <div className="grid grid-cols-7 gap-4 mb-4">
+                {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((day, index) => (
+                  <div key={day} className="text-center">
+                    <h3 className="font-semibold text-sm text-foreground">{day}</h3>
+                    <p className="text-xs text-muted-foreground">Oct {21 + index}</p>
+                  </div>
+                ))}
+              </div>
+              
+              <div className="grid grid-cols-7 gap-4 min-h-96">
+                {Array.from({ length: 7 }, (_, dayIndex) => (
+                  <div key={dayIndex} className="border border-border rounded-md p-2 bg-muted/20 min-h-80">
+                    <div className="space-y-2">
+                      {activities
+                        .filter((_, i) => i % 7 === dayIndex)
+                        .map((activity) => {
+                          const owner = getUserById(activity.ownerUid);
+                          return (
+                            <Card key={activity.activityId} className="p-3 bg-card border border-border cursor-pointer hover:shadow-sm transition-shadow">
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className="text-sm">{getActivityIcon(activity.channel)}</span>
+                                <Badge variant="outline" className="text-xs">
+                                  {activity.channel}
+                                </Badge>
+                                <Badge 
+                                  variant={
+                                    activity.status === 'draft' ? 'secondary' : 
+                                    activity.status === 'approved' ? 'default' : 'outline'
+                                  }
+                                  className="text-xs"
+                                >
+                                  {activity.status === 'draft' && <Clock className="h-3 w-3 mr-1" />}
+                                  {activity.status === 'approved' && <CheckCircle className="h-3 w-3 mr-1" />}  
+                                  {activity.status === 'exported' && <Send className="h-3 w-3 mr-1" />}
+                                  {activity.status}
+                                </Badge>
+                              </div>
+                              <p className="text-sm font-medium mb-1">
+                                {activity.contentPacket.subjectLine || `${activity.channel} Activity`}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {owner ? owner.displayName : 'Unassigned'}
+                              </p>
+                              {activity.contentPacket.hashtags && (
+                                <div className="flex flex-wrap gap-1 mt-2">
+                                  {activity.contentPacket.hashtags.slice(0, 2).map((tag, i) => (
+                                    <span key={i} className="text-xs text-primary bg-primary/10 px-1 rounded">
+                                      {tag}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </Card>
+                          );
+                        })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>
