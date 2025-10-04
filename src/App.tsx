@@ -3,36 +3,43 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Users, Building2, Calendar, Settings, MessageCircle, Plus, Upload, CheckCircle, Clock, Send, AlertCircle, BarChart3, Activity as ActivityIcon } from 'lucide-react';
+import { Users, Building2, Calendar, Settings, MessageCircle, Plus, Upload, CheckCircle, Clock, Send, AlertCircle, BarChart3, Activity as ActivityIcon, Shield, Palette } from 'lucide-react';
 import type { User, Store, Role, Tier } from '@/models/core';
 import type { Activity } from '@/models/planner';
 import { useInitialData } from '@/hooks/useInitialData';
+import { useCurrentUserPermissions } from '@/hooks/usePermissions';
 import { useAuditLog, AUDIT_ACTIONS } from '@/lib/audit';
 import { exportDayToWrike, downloadWrikeExport } from '@/lib/export-xlsx';
 import { CsvImportDialog } from '@/components/stores/CsvImportDialog';
 import { UserEditDialog } from '@/components/users/UserEditDialog';
 import { ChatDrawer } from '@/components/chat/ChatDrawer';
 
-type View = 'dashboard' | 'planner' | 'settings-users' | 'settings-stores' | 'settings-theme';
+type View = 'dashboard' | 'planner' | 'settings-users' | 'settings-stores' | 'settings-theme' | 'settings-roles';
 
 function App() {
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const [showChatDrawer, setShowChatDrawer] = useState(false);
   const { users, stores, roles, tiers, activities, setUsers, setStores, setActivities } = useInitialData();
   const { writeAuditLog } = useAuditLog();
+  
+  // Mock current user - in production this would come from auth
+  const currentUser = users?.[0] || null; // Use first user (Maggie, Admin) as current user
+  const permissions = useCurrentUserPermissions(currentUser, roles || [], tiers || []);
 
   const renderView = () => {
     switch (currentView) {
       case 'dashboard':
         return <DashboardView users={users || []} stores={stores || []} activities={activities || []} />;
       case 'planner':
-        return <PlannerView activities={activities || []} users={users || []} />;
+        return <PlannerView activities={activities || []} users={users || []} permissions={permissions} />;
       case 'settings-users':
-        return <UsersView users={users || []} roles={roles || []} tiers={tiers || []} />;
+        return <UsersView users={users || []} roles={roles || []} tiers={tiers || []} permissions={permissions} />;
       case 'settings-stores':
-        return <StoresView stores={stores || []} />;
+        return <StoresView stores={stores || []} permissions={permissions} />;
+      case 'settings-roles':
+        return <RolesAndTiersView roles={roles || []} tiers={tiers || []} permissions={permissions} />;
       case 'settings-theme':
-        return <ThemeView />;
+        return <ThemeView permissions={permissions} />;
       default:
         return <DashboardView users={users || []} stores={stores || []} activities={activities || []} />;
     }
@@ -67,6 +74,17 @@ function App() {
               </div>
             </div>
             <div className="flex items-center gap-2">
+              {currentUser && (
+                <div className="hidden sm:flex items-center gap-2 text-sm text-muted-foreground">
+                  <span>{currentUser.displayName}</span>
+                  <Badge variant="outline" className="text-xs">
+                    {roles?.find(r => r.roleId === currentUser.roleId)?.name}
+                  </Badge>
+                  <Badge variant="secondary" className="text-xs">
+                    {tiers?.find(t => t.tierId === currentUser.tierId)?.name}
+                  </Badge>
+                </div>
+              )}
               <Button variant="ghost" size="sm" onClick={() => setShowChatDrawer(true)}>
                 <MessageCircle className="h-4 w-4 mr-2" />
                 Vizzy
@@ -233,7 +251,11 @@ function DashboardView({ users, stores, activities }: {
   );
 }
 
-function PlannerView({ activities, users }: { activities: Activity[], users: User[] }) {
+function PlannerView({ activities, users, permissions }: { 
+  activities: Activity[], 
+  users: User[], 
+  permissions: ReturnType<typeof useCurrentUserPermissions>
+}) {
   const [exportErrors, setExportErrors] = useState<string[]>([]);
   const { writeAuditLog } = useAuditLog();
   
@@ -307,14 +329,18 @@ function PlannerView({ activities, users }: { activities: Activity[], users: Use
           <p className="text-muted-foreground">7-day campaign activity scheduler</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={handleExportToWrike}>
-            <Upload className="h-4 w-4 mr-2" />
-            Export to Wrike
-          </Button>
-          <Button>
-            <Plus className="h-4 w-4 mr-2" />
-            Add Activity
-          </Button>
+          {permissions.hasPerm('export:write') && (
+            <Button variant="outline" onClick={handleExportToWrike}>
+              <Upload className="h-4 w-4 mr-2" />
+              Export to Wrike
+            </Button>
+          )}
+          {permissions.hasPerm('planner:write') && (
+            <Button>
+              <Plus className="h-4 w-4 mr-2" />
+              Add Activity
+            </Button>
+          )}
         </div>
       </div>
       
@@ -417,7 +443,12 @@ function PlannerView({ activities, users }: { activities: Activity[], users: Use
   );
 }
 
-function UsersView({ users, roles, tiers }: { users: User[], roles: Role[], tiers: Tier[] }) {
+function UsersView({ users, roles, tiers, permissions }: { 
+  users: User[], 
+  roles: Role[], 
+  tiers: Tier[], 
+  permissions: ReturnType<typeof useCurrentUserPermissions>
+}) {
   const [showUserDialog, setShowUserDialog] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const { setUsers } = useInitialData();
@@ -491,7 +522,8 @@ function UsersView({ users, roles, tiers }: { users: User[], roles: Role[], tier
       
       <Tabs defaultValue="users" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="users">Users & Roles</TabsTrigger>
+          <TabsTrigger value="users">Users</TabsTrigger>
+          <TabsTrigger value="roles">Roles & Tiers</TabsTrigger>
           <TabsTrigger value="stores">Stores</TabsTrigger>
           <TabsTrigger value="theme">Theme</TabsTrigger>
         </TabsList>
@@ -499,13 +531,15 @@ function UsersView({ users, roles, tiers }: { users: User[], roles: Role[], tier
         <TabsContent value="users" className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-xl font-semibold">Users & Roles</h2>
-              <p className="text-muted-foreground">Manage user accounts and permissions</p>
+              <h2 className="text-xl font-semibold">Users</h2>
+              <p className="text-muted-foreground">Manage user accounts</p>
             </div>
-            <Button onClick={handleAddUser}>
-              <Users className="h-4 w-4 mr-2" />
-              Add User
-            </Button>
+            {permissions.canWrite('users') && (
+              <Button onClick={handleAddUser}>
+                <Users className="h-4 w-4 mr-2" />
+                Add User
+              </Button>
+            )}
           </div>
           
           <Card>
@@ -544,12 +578,16 @@ function UsersView({ users, roles, tiers }: { users: User[], roles: Role[], tier
           </Card>
         </TabsContent>
         
+        <TabsContent value="roles">
+          <RolesAndTiersView roles={roles || []} tiers={tiers || []} permissions={permissions} />
+        </TabsContent>
+        
         <TabsContent value="stores">
-          <StoresView stores={[]} />
+          <StoresView stores={[]} permissions={permissions} />
         </TabsContent>
         
         <TabsContent value="theme">
-          <ThemeView />
+          <ThemeView permissions={permissions} />
         </TabsContent>
       </Tabs>
 
@@ -566,7 +604,10 @@ function UsersView({ users, roles, tiers }: { users: User[], roles: Role[], tier
   );
 }
 
-function StoresView({ stores }: { stores: Store[] }) {
+function StoresView({ stores, permissions }: { 
+  stores: Store[], 
+  permissions: ReturnType<typeof useCurrentUserPermissions>
+}) {
   const actualStores = stores || [];
   const [showImportDialog, setShowImportDialog] = useState(false);
   const { setStores } = useInitialData();
@@ -597,14 +638,18 @@ function StoresView({ stores }: { stores: Store[] }) {
           <p className="text-muted-foreground">Manage store locations and data</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setShowImportDialog(true)}>
-            <Upload className="h-4 w-4 mr-2" />
-            Import CSV
-          </Button>
-          <Button>
-            <Building2 className="h-4 w-4 mr-2" />
-            Add Store
-          </Button>
+          {permissions.canWrite('stores') && (
+            <>
+              <Button variant="outline" onClick={() => setShowImportDialog(true)}>
+                <Upload className="h-4 w-4 mr-2" />
+                Import CSV
+              </Button>
+              <Button>
+                <Building2 className="h-4 w-4 mr-2" />
+                Add Store
+              </Button>
+            </>
+          )}
         </div>
       </div>
       
@@ -651,7 +696,28 @@ function StoresView({ stores }: { stores: Store[] }) {
   );
 }
 
-function ThemeView() {
+function ThemeView({ permissions }: { 
+  permissions: ReturnType<typeof useCurrentUserPermissions>
+}) {
+  if (!permissions.hasAnyPerm(['roles:write', 'tiers:write'])) {
+    return (
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-xl font-semibold">Theme & Branding</h2>
+          <p className="text-muted-foreground text-red-600">Access denied: insufficient permissions</p>
+        </div>
+        <Card>
+          <CardContent className="p-6">
+            <div className="text-center text-muted-foreground">
+              <Shield className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p>You need Admin permissions to access theme settings.</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div>
@@ -712,6 +778,140 @@ function ThemeView() {
             <div>
               <p className="text-base mb-1">Body Text (16px Regular)</p>
               <p className="text-sm text-muted-foreground">Primary content text</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function RolesAndTiersView({ roles, tiers, permissions }: { 
+  roles: Role[], 
+  tiers: Tier[], 
+  permissions: ReturnType<typeof useCurrentUserPermissions>
+}) {
+  if (!permissions.hasAnyPerm(['roles:write', 'tiers:write', 'roles:read', 'tiers:read'])) {
+    return (
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-xl font-semibold">Roles & Tiers</h2>
+          <p className="text-muted-foreground text-red-600">Access denied: insufficient permissions</p>
+        </div>
+        <Card>
+          <CardContent className="p-6">
+            <div className="text-center text-muted-foreground">
+              <Shield className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p>You need Admin permissions to access roles and tiers.</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-xl font-semibold">Roles & Tiers</h2>
+        <p className="text-muted-foreground">Manage user roles and permission tiers</p>
+      </div>
+      
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Roles</CardTitle>
+            <CardDescription>Functional permissions defining what users can do</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {roles.map((role) => (
+                <div key={role.roleId} className="p-4 border border-border rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-medium text-foreground">{role.name}</h3>
+                    <Badge variant="outline">{role.permissions.length} perms</Badge>
+                  </div>
+                  <p className="text-sm text-muted-foreground mb-3">{role.description}</p>
+                  <div className="flex flex-wrap gap-1">
+                    {role.permissions.slice(0, 3).map((perm) => (
+                      <Badge key={perm} variant="secondary" className="text-xs">
+                        {perm}
+                      </Badge>
+                    ))}
+                    {role.permissions.length > 3 && (
+                      <Badge variant="outline" className="text-xs">
+                        +{role.permissions.length - 3} more
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Tiers</CardTitle>
+            <CardDescription>Operational scope defining where users can act</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {tiers.map((tier) => (
+                <div key={tier.tierId} className="p-4 border border-border rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-medium text-foreground">{tier.name}</h3>
+                    <Badge variant="outline">{tier.permissions.length} perms</Badge>
+                  </div>
+                  <p className="text-sm text-muted-foreground mb-3">{tier.description}</p>
+                  <div className="flex flex-wrap gap-1">
+                    {tier.permissions.length > 0 ? (
+                      tier.permissions.map((perm) => (
+                        <Badge key={perm} variant="secondary" className="text-xs">
+                          {perm}
+                        </Badge>
+                      ))
+                    ) : (
+                      <span className="text-xs text-muted-foreground">No additional permissions</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+      
+      <Card>
+        <CardHeader>
+          <CardTitle>Permission Matrix</CardTitle>
+          <CardDescription>Effective permissions = Role ∪ Tier (union of both)</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div className="text-sm text-muted-foreground">
+              <p className="mb-2">
+                <strong>Example:</strong> A Manager (role) with Regional (tier) gets:
+              </p>
+              <ul className="list-disc list-inside space-y-1">
+                <li>Role permissions: users:read, stores:write, planner:write, planner:approve, export:write, audit:read</li>
+                <li>Tier permissions: export:write (already included)</li>
+                <li><strong>Effective permissions:</strong> Union of both sets</li>
+              </ul>
+            </div>
+            
+            <div className="border-t pt-4">
+              <h4 className="font-medium mb-2">Your Current Effective Permissions:</h4>
+              <div className="flex flex-wrap gap-1">
+                {Array.from(permissions.effective).map((perm) => (
+                  <Badge key={perm} variant="default" className="text-xs">
+                    {perm}
+                  </Badge>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                Total: {permissions.effective.size} permissions
+              </p>
             </div>
           </div>
         </CardContent>

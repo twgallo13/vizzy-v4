@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useKV } from '@github/spark/hooks';
 import type { User, Store, Role, Tier, AuditLog } from '@/models/core';
 import type { Activity, Program } from '@/models/planner';
+import { SEED_ROLES, SEED_TIERS } from '@/data/seed';
 
 export function useInitialData() {
   const [users, setUsers] = useKV<User[]>('users', []);
@@ -15,71 +16,12 @@ export function useInitialData() {
   useEffect(() => {
     // Initialize roles if empty
     if (!roles || roles.length === 0) {
-      const initialRoles: Role[] = [
-        {
-          roleId: 'role_admin',
-          name: 'Admin',
-          permissions: [
-            'users:read', 'users:write', 'stores:write', 'planner:write',
-            'planner:approve', 'export:write', 'roles:write', 'roles:read',
-            'tiers:write', 'tiers:read', 'rules:write', 'audit:read'
-          ],
-          description: 'Full system access and configuration'
-        },
-        {
-          roleId: 'role_manager',
-          name: 'Manager',
-          permissions: [
-            'users:read', 'stores:write', 'planner:write', 
-            'planner:approve', 'export:write', 'audit:read'
-          ],
-          description: 'Regional manager with approval rights'
-        },
-        {
-          roleId: 'role_planner',
-          name: 'Planner',
-          permissions: ['planner:write'],
-          description: 'Campaign planner and content creator'
-        },
-        {
-          roleId: 'role_contributor',
-          name: 'Contributor',
-          permissions: ['planner:write'],
-          description: 'Content contributor, draft activities only'
-        },
-        {
-          roleId: 'role_viewer',
-          name: 'Viewer',
-          permissions: [],
-          description: 'Read-only access to dashboards and reports'
-        }
-      ];
-      setRoles(initialRoles);
+      setRoles(SEED_ROLES);
     }
 
     // Initialize tiers if empty
     if (!tiers || tiers.length === 0) {
-      const initialTiers: Tier[] = [
-        {
-          tierId: 'tier_local',
-          name: 'Local',
-          permissions: [],
-          description: 'Single store or program access'
-        },
-        {
-          tierId: 'tier_regional',
-          name: 'Regional',
-          permissions: ['export:write'],
-          description: 'Multiple stores or programs in a region'
-        },
-        {
-          tierId: 'tier_global',
-          name: 'Global',  
-          permissions: ['roles:read', 'tiers:read', 'audit:read'],
-          description: 'All programs and stores access'
-        }
-      ];
-      setTiers(initialTiers);
+      setTiers(SEED_TIERS);
     }
 
     // Initialize users if empty
