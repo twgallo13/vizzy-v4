@@ -1,211 +1,251 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Upload, Plus, AlertCircle, Clock, CheckCircle, Send } from 'lucide-react';
-import { useIsMobile } from '@/hooks/use-mobile';
+import { Button } from '@/components/ui/button';
 
-interface Activity {
+type Channel = 'Email' | 'Social' | 'Banner' | 'Push';
+type ActivityStatus = 'draft' | 'approved' | 'exported';
+
+export interface User {
+  uid: string;
+  displayName: string;
+  wrikeName?: string;
+}
+
+export interface Activity {
   activityId: string;
-  channel: string;
-  status: 'draft' | 'approved' | 'exported';
+  channel: Channel;
+  status: ActivityStatus;
   ownerUid: string;
   contentPacket: {
     subjectLine?: string;
     hashtags?: string[];
+    bannerUrl?: string;
   };
 }
 
-interface User {
-  uid: string;
-  displayName: string;
+export interface Day {
+  dayName: string;          // e.g., "Monday"
+  date: string;             // ISO or human-readable
+  activities: Activity[];
+}
+
+interface Permissions {
+  hasPerm: (perm: string) => boolean;
 }
 
 interface CalendarProps {
-  activities: Activity[];
-  users: User[];
-  permissions: {
-    hasPerm: (perm: string) => boolean;
-  };
-  onExportToWrike?: () => void;
-  onAddActivity?: () => void;
-  exportErrors?: string[];
-  onDismissErrors?: () => void;
+  days: Day[];                                    // exactly 7
+  usersById: Record<string, User>;
+  permissions: Permissions;
+  exportErrors?: string[];                        // wrikeName blockers, etc.
+  onExportToWrike?: (period: 'week') => void;
+  onAddActivity?: (dayName?: string) => void;
+  onOpenActivity?: (activityId: string) => void;
 }
 
-interface DayData {
-  dayName: string;
-  date: number;
-  activities: Activity[];
+function ChannelBadge({ channel }: { channel: Channel }) {
+  return <Badge variant="outline" className="capitalize">{channel}</Badge>;
 }
 
-const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+function StatusBadge({ status }: { status: ActivityStatus }) {
+  const variant =
+    status === 'approved' ? 'default' :
+    status === 'exported' ? 'secondary' : 'outline';
+  return <Badge variant={variant} className="capitalize">{status}</Badge>;
+}
 
-export function Calendar({ 
-  activities, 
-  users, 
-  permissions, 
-  onExportToWrike, 
-  onAddActivity,
+function ActivityCard({
+  activity,
+  owner,
+  onOpen,
+}: {
+  activity: Activity;
+  owner?: User;
+  onOpen?: (id: string) => void;
+}) {
+  return (
+    <Card
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpen?.(activity.activityId)}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onOpen?.(activity.activityId); }}
+      className="p-3 hover:bg-accent focus:outline-none focus:ring-2 focus:ring-ring transition"
+      aria-label={`${activity.channel} ${activity.contentPacket.subjectLine ?? ''}`.trim()}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <ChannelBadge channel={activity.channel} />
+          <StatusBadge status={activity.status} />
+        </div>
+        <div className="text-xs text-muted-foreground">
+          {owner?.displayName ?? 'Unassigned'}
+        </div>
+      </div>
+
+      {activity.contentPacket.subjectLine && (
+        <p className="mt-2 text-sm font-medium text-foreground">
+          {activity.contentPacket.subjectLine}
+        </p>
+      )}
+
+      {activity.contentPacket.hashtags && activity.contentPacket.hashtags.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {activity.contentPacket.hashtags.slice(0, 3).map((tag, i) => (
+            <span key={i} className="text-xs text-primary/80">#{tag}</span>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function ErrorDisplay({ errors, onDismiss }: { errors: string[]; onDismiss?: () => void }) {
+  if (!errors || errors.length === 0) return null;
+  return (
+    <Card className="border-destructive/30 bg-destructive/5">
+      <CardContent className="p-4">
+        <div className="flex items-start gap-3">
+          <div className="flex-1">
+            <p className="font-medium text-destructive">Export blocked</p>
+            <p className="text-sm text-muted-foreground">
+              Some activities failed preflight (e.g., invalid Wrike assignee names). Fix these and try again:
+            </p>
+            <ul className="mt-2 list-disc pl-5 space-y-1 text-sm">
+              {errors.map((err, idx) => <li key={idx}>{err}</li>)}
+            </ul>
+            {onDismiss && (
+              <Button variant="outline" size="sm" className="mt-3" onClick={onDismiss}>
+                Dismiss
+              </Button>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+export function Calendar({
+  days,
+  usersById,
+  permissions,
   exportErrors = [],
-  onDismissErrors
+  onExportToWrike,
+  onAddActivity,
+  onOpenActivity,
 }: CalendarProps) {
-  const isMobile = useIsMobile();
-  const [focusedDayIndex, setFocusedDayIndex] = useState<number>(0);
-  const dayRefs = useRef<(HTMLDivElement | null)[]>([]);
-  
-  const getUserById = (uid: string) => users.find(u => u.uid === uid);
-  
-  const getActivityIcon = (channel: string) => {
-    switch (channel) {
-      case 'Email': return '📧';
-      case 'Social': return '📱';
-      case 'Banner': return '🎨';
-      case 'Push': return '🔔';
-      default: return '📄';
-    }
-  };
+  // Roving focus among day columns
+  const dayRefs = useRef<HTMLDivElement[]>([]);
+  const [focusedIndex, setFocusedIndex] = useState(0);
 
-  // Organize activities by day (mock distribution)
-  const dayData: DayData[] = DAYS.map((dayName, index) => ({
-    dayName,
-    date: 21 + index,
-    activities: activities.filter((_, i) => i % 7 === index)
-  }));
-
-  const handleKeyDown = useCallback((event: React.KeyboardEvent) => {
-    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-      event.preventDefault();
-      const direction = event.key === 'ArrowLeft' ? -1 : 1;
-      const newIndex = Math.max(0, Math.min(6, focusedDayIndex + direction));
-      setFocusedDayIndex(newIndex);
-      dayRefs.current[newIndex]?.focus();
-    }
-  }, [focusedDayIndex]);
-
-  useEffect(() => {
-    // Focus the first day on mount for keyboard accessibility
-    dayRefs.current[0]?.focus();
+  const setRef = useCallback((el: HTMLDivElement | null, idx: number) => {
+    if (el) dayRefs.current[idx] = el;
   }, []);
 
-  if (isMobile) {
-    return (
-      <div className="space-y-4 overflow-hidden">
-        <CalendarHeader 
-          permissions={permissions}
-          onExportToWrike={onExportToWrike}
-          onAddActivity={onAddActivity}
-        />
-        
-        {exportErrors.length > 0 && (
-          <ErrorDisplay errors={exportErrors} onDismiss={onDismissErrors} />
-        )}
+  useEffect(() => {
+    dayRefs.current[focusedIndex]?.focus();
+  }, [focusedIndex]);
 
-        <Card>
-          <CardContent className="p-4">
-            {/* Mobile day headers - horizontal scroll */}
-            <div className="overflow-x-auto scrollbar-hide mb-4">
-              <div className="flex gap-3 min-w-max pb-2">
-                {dayData.map((day, index) => (
-                  <div key={day.dayName} className="flex-shrink-0 text-center min-w-20">
-                    <h3 className="text-sm font-medium text-foreground">
-                      {day.dayName.substring(0, 3)}
-                    </h3>
-                    <p className="text-xs text-muted-foreground">Oct {day.date}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-            
-            {/* Mobile activity columns - horizontal scroll */}
-            <div className="overflow-x-auto scrollbar-hide">
-              <div className="flex gap-3 min-w-max">
-                {dayData.map((day, dayIndex) => (
-                  <div
-                    key={day.dayName}
-                    ref={el => { dayRefs.current[dayIndex] = el; }}
-                    className="flex-shrink-0 w-64 border border-border rounded-lg p-3 bg-muted/30 min-h-80 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                    tabIndex={dayIndex === focusedDayIndex ? 0 : -1}
-                    onKeyDown={handleKeyDown}
-                    role="region"
-                    aria-label={`${day.dayName}, October ${day.date} activities`}
-                  >
-                    <div className="space-y-2">
-                      {day.activities.map((activity) => (
-                        <ActivityCard 
-                          key={activity.activityId} 
-                          activity={activity} 
-                          owner={getUserById(activity.ownerUid)}
-                          getActivityIcon={getActivityIcon}
-                          compact
-                        />
-                      ))}
-                      {day.activities.length === 0 && (
-                        <div className="text-xs text-muted-foreground text-center py-8">
-                          No activities
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+  const canExport = permissions.hasPerm('export:write');
+  const addLabel = 'Add Activity';
+  const exportLabel = 'Export to Wrike';
+
+  const handleKeyNav = (e: React.KeyboardEvent, idx: number) => {
+    if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      setFocusedIndex((idx + 1) % days.length);
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      setFocusedIndex((idx - 1 + days.length) % days.length);
+    }
+  };
+
+  const header = useMemo(() => (
+    <div className="flex items-center justify-between mb-3">
+      <p className="text-sm text-muted-foreground">7-day campaign planner</p>
+      <div className="flex gap-2">
+        {onAddActivity && (
+          <Button variant="outline" onClick={() => onAddActivity?.()}>
+            {addLabel}
+          </Button>
+        )}
+        {onExportToWrike && (
+          <Button
+            onClick={() => onExportToWrike?.('week')}
+            disabled={!canExport}
+            title={!canExport ? 'You do not have permission to export' : exportLabel}
+          >
+            {exportLabel}
+          </Button>
+        )}
       </div>
-    );
-  }
+    </div>
+  ), [canExport, onAddActivity, onExportToWrike]);
 
   return (
-    <div className="space-y-6">
-      <CalendarHeader 
-        permissions={permissions}
-        onExportToWrike={onExportToWrike}
-        onAddActivity={onAddActivity}
-      />
-      
+    <div className="space-y-4">
+      {header}
+
       {exportErrors.length > 0 && (
-        <ErrorDisplay errors={exportErrors} onDismiss={onDismissErrors} />
+        <ErrorDisplay errors={exportErrors} />
       )}
 
       <Card>
-        <CardContent className="p-6">
-          {/* Desktop day headers */}
-          <div className="grid grid-cols-7 gap-4 mb-4">
-            {dayData.map((day) => (
-              <div key={day.dayName} className="text-center">
-                <h3 className="text-sm font-medium text-foreground">{day.dayName}</h3>
-                <p className="text-xs text-muted-foreground">Oct {day.date}</p>
+        <CardContent className="p-4">
+          {/* Desktop grid */}
+          <div className="hidden md:grid grid-cols-7 gap-3">
+            {days.map((day, dayIdx) => (
+              <div key={day.dayName} className="min-h-[220px]">
+                <div className="flex items-baseline justify-between mb-2">
+                  <p className="font-medium">{day.dayName}</p>
+                  <span className="text-xs text-muted-foreground">{day.date}</span>
+                </div>
+                <div className="space-y-2">
+                  {day.activities.length === 0 && (
+                    <p className="text-xs text-muted-foreground">No activities</p>
+                  )}
+                  {day.activities.map((a) => (
+                    <ActivityCard
+                      key={a.activityId}
+                      activity={a}
+                      owner={usersById[a.ownerUid]}
+                      onOpen={onOpenActivity}
+                    />
+                  ))}
+                </div>
               </div>
             ))}
           </div>
-          
-          {/* Desktop activity grid */}
-          <div className="grid grid-cols-7 gap-4 min-h-96">
-            {dayData.map((day, dayIndex) => (
+
+          {/* Mobile horizontal list */}
+          <div className="md:hidden flex gap-3 overflow-x-auto">
+            {days.map((day, dayIdx) => (
               <div
                 key={day.dayName}
-                ref={el => { dayRefs.current[dayIndex] = el; }}
-                className="border border-border rounded-lg p-3 bg-muted/30 min-h-80 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                tabIndex={dayIndex === focusedDayIndex ? 0 : -1}
-                onKeyDown={handleKeyDown}
+                ref={(el) => setRef(el, dayIdx)}
+                tabIndex={dayIdx === focusedIndex ? 0 : -1}
                 role="region"
-                aria-label={`${day.dayName}, October ${day.date} activities`}
+                aria-label={`${day.dayName} ${day.date}`}
+                onKeyDown={(e) => handleKeyNav(e, dayIdx)}
+                className="min-w-[260px] outline-none focus:ring-2 focus:ring-ring rounded-lg border p-3"
               >
+                <div className="flex items-baseline justify-between mb-2">
+                  <p className="font-medium">{day.dayName}</p>
+                  <span className="text-xs text-muted-foreground">{day.date}</span>
+                </div>
                 <div className="space-y-2">
-                  {day.activities.map((activity) => (
-                    <ActivityCard 
-                      key={activity.activityId} 
-                      activity={activity} 
-                      owner={getUserById(activity.ownerUid)}
-                      getActivityIcon={getActivityIcon}
+                  {day.activities.length === 0 && (
+                    <p className="text-xs text-muted-foreground">No activities</p>
+                  )}
+                  {day.activities.map((a) => (
+                    <ActivityCard
+                      key={a.activityId}
+                      activity={a}
+                      owner={usersById[a.ownerUid]}
+                      onOpen={onOpenActivity}
                     />
                   ))}
-                  {day.activities.length === 0 && (
-                    <div className="text-sm text-muted-foreground text-center py-8">
-                      No activities
-                    </div>
-                  )}
                 </div>
               </div>
             ))}
@@ -216,171 +256,4 @@ export function Calendar({
   );
 }
 
-function CalendarHeader({ 
-  permissions, 
-  onExportToWrike, 
-  onAddActivity 
-}: {
-  permissions: { hasPerm: (perm: string) => boolean };
-  onExportToWrike?: () => void;
-  onAddActivity?: () => void;
-}) {
-  return (
-    <div className="flex items-center justify-between">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Campaign Planner</h1>
-        <p className="text-sm text-muted-foreground">7-day campaign activity scheduler</p>
-      </div>
-      <div className="flex gap-2">
-        {permissions.hasPerm('export:write') && onExportToWrike && (
-          <Button variant="outline" onClick={onExportToWrike}>
-            <Upload className="h-4 w-4 mr-2" />
-            Export to Wrike
-          </Button>
-        )}
-        {permissions.hasPerm('planner:write') && onAddActivity && (
-          <Button onClick={onAddActivity}>
-            <Plus className="h-4 w-4 mr-2" />
-            Add Activity
-          </Button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ErrorDisplay({ errors, onDismiss }: { errors: string[]; onDismiss?: () => void }) {
-  return (
-    <Card className="border-destructive/50 bg-destructive/10">
-      <CardContent className="p-4">
-        <div className="flex items-start gap-3">
-          <AlertCircle className="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <h3 className="text-sm font-medium text-destructive mb-2">
-              Export Blocked - wrikeName Validation Failed
-            </h3>
-            <p className="text-sm text-muted-foreground mb-3">
-              Export cannot proceed until all wrikeName issues are resolved.
-            </p>
-            <div className="space-y-1">
-              {errors.map((error, index) => (
-                <div key={index} className="text-xs text-muted-foreground">
-                  • {error}
-                </div>
-              ))}
-            </div>
-            {onDismiss && (
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="mt-3" 
-                onClick={onDismiss}
-              >
-                Acknowledge & Dismiss
-              </Button>
-            )}
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function ActivityCard({ 
-  activity, 
-  owner, 
-  getActivityIcon,
-  compact = false 
-}: {
-  activity: Activity;
-  owner?: User;
-  getActivityIcon: (channel: string) => string;
-  compact?: boolean;
-}) {
-  const getStatusIcon = () => {
-    switch (activity.status) {
-      case 'draft': return <Clock className={`${compact ? 'h-2 w-2' : 'h-3 w-3'} mr-1`} />;
-      case 'approved': return <CheckCircle className={`${compact ? 'h-2 w-2' : 'h-3 w-3'} mr-1`} />;
-      case 'exported': return <Send className={`${compact ? 'h-2 w-2' : 'h-3 w-3'} mr-1`} />;
-      default: return null;
-    }
-  };
-
-  const getStatusVariant = () => {
-    switch (activity.status) {
-      case 'draft': return 'secondary';
-      case 'approved': return 'default';
-      default: return 'outline';
-    }
-  };
-
-  if (compact) {
-    return (
-      <Card className="p-2 bg-card border border-border cursor-pointer hover:bg-muted/50 transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1" tabIndex={0}>
-        <div className="space-y-2">
-          <div className="flex items-center gap-1 flex-wrap">
-            <span className="text-xs" role="img" aria-label={`${activity.channel} channel`}>
-              {getActivityIcon(activity.channel)}
-            </span>
-            <Badge variant="outline" className="text-xs h-5">
-              {activity.channel}
-            </Badge>
-            <Badge variant={getStatusVariant() as any} className="text-xs h-5">
-              {getStatusIcon()}
-              {activity.status}
-            </Badge>
-          </div>
-          <p className="text-xs font-medium leading-tight text-foreground">
-            {activity.contentPacket.subjectLine || `${activity.channel} Activity`}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            {owner ? owner.displayName : 'Unassigned'}
-          </p>
-          {activity.contentPacket.hashtags && (
-            <div className="flex flex-wrap gap-1">
-              {activity.contentPacket.hashtags.slice(0, 2).map((tag, i) => (
-                <span key={i} className="text-xs text-primary bg-primary/10 px-1 py-0.5 rounded">
-                  {tag}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      </Card>
-    );
-  }
-
-  return (
-    <Card className="p-3 bg-card border border-border cursor-pointer hover:bg-muted/50 transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1" tabIndex={0}>
-      <div className="space-y-2">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm" role="img" aria-label={`${activity.channel} channel`}>
-            {getActivityIcon(activity.channel)}
-          </span>
-          <Badge variant="outline" className="text-xs">
-            {activity.channel}
-          </Badge>
-          <Badge variant={getStatusVariant() as any} className="text-xs">
-            {getStatusIcon()}
-            {activity.status}
-          </Badge>
-        </div>
-        <p className="text-sm font-medium text-foreground">
-          {activity.contentPacket.subjectLine || `${activity.channel} Activity`}
-        </p>
-        <p className="text-xs text-muted-foreground">
-          {owner ? owner.displayName : 'Unassigned'}
-        </p>
-        {activity.contentPacket.hashtags && (
-          <div className="flex flex-wrap gap-1">
-            {activity.contentPacket.hashtags.slice(0, 2).map((tag, i) => (
-              <span key={i} className="text-xs text-primary bg-primary/10 px-1 py-0.5 rounded">
-                {tag}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
-    </Card>
-  );
-}
+export default Calendar;
