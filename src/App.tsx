@@ -1,22 +1,25 @@
 import { useState } from 'react';
-import { useKV } from '@github/spark/hooks';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Users, Building2, Calendar, Settings, MessageCircle, Plus, Upload, CheckCircle, Clock, Send } from 'lucide-react';
+import { Users, Building2, Calendar, Settings, MessageCircle, Plus, Upload, CheckCircle, Clock, Send, AlertCircle } from 'lucide-react';
 import type { User, Store, Role, Tier } from '@/models/core';
 import type { Activity } from '@/models/planner';
+import { useInitialData } from '@/hooks/useInitialData';
+import { useAuditLog, AUDIT_ACTIONS } from '@/lib/audit';
+import { exportDayToWrike, downloadWrikeExport } from '@/lib/export-xlsx';
+import { CsvImportDialog } from '@/components/stores/CsvImportDialog';
+import { UserEditDialog } from '@/components/users/UserEditDialog';
+import { ChatDrawer } from '@/components/chat/ChatDrawer';
 
 type View = 'dashboard' | 'planner' | 'settings-users' | 'settings-stores' | 'settings-theme';
 
 function App() {
   const [currentView, setCurrentView] = useState<View>('dashboard');
-  const [users] = useKV<User[]>('users', []);
-  const [stores] = useKV<Store[]>('stores', []);
-  const [roles] = useKV<Role[]>('roles', []);
-  const [tiers] = useKV<Tier[]>('tiers', []);
-  const [activities] = useKV<Activity[]>('activities', []);
+  const [showChatDrawer, setShowChatDrawer] = useState(false);
+  const { users, stores, roles, tiers, activities, setUsers, setStores, setActivities } = useInitialData();
+  const { writeAuditLog } = useAuditLog();
 
   const renderView = () => {
     switch (currentView) {
@@ -64,7 +67,7 @@ function App() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm">
+              <Button variant="ghost" size="sm" onClick={() => setShowChatDrawer(true)}>
                 <MessageCircle className="h-4 w-4 mr-2" />
                 Vizzy
               </Button>
@@ -84,6 +87,20 @@ function App() {
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         {renderView()}
       </main>
+
+      <ChatDrawer 
+        open={showChatDrawer}
+        onOpenChange={setShowChatDrawer}
+      />
+
+      {/* Floating Action Button for Chat */}
+      <Button
+        size="icon"
+        className="fixed bottom-6 right-6 h-14 w-14 rounded-full shadow-lg hover:shadow-xl transition-shadow z-50"
+        onClick={() => setShowChatDrawer(true)}
+      >
+        <MessageCircle className="h-6 w-6" />
+      </Button>
     </div>
   );
 }
@@ -217,7 +234,60 @@ function DashboardView({ users, stores, activities }: {
 }
 
 function PlannerView({ activities, users }: { activities: Activity[], users: User[] }) {
+  const [exportErrors, setExportErrors] = useState<string[]>([]);
+  const { writeAuditLog } = useAuditLog();
+  
   const getUserById = (uid: string) => users.find(u => u.uid === uid);
+  
+  const handleExportToWrike = async () => {
+    setExportErrors([]);
+    
+    // Create a mock week structure for the demo
+    const mockDayCard = {
+      date: new Date(),
+      activities: activities.filter(a => a.status === 'approved')
+    };
+    
+    // Create usersById lookup
+    const usersById = users.reduce((acc, user) => {
+      acc[user.uid] = user;
+      return acc;
+    }, {} as Record<string, User>);
+    
+    // Try to export
+    const result = exportDayToWrike('Current Week', mockDayCard, usersById);
+    
+    if (!result.success) {
+      setExportErrors(result.errors || []);
+      if (result.invalidUsers) {
+        setExportErrors(prev => [...prev, ...result.invalidUsers!]);
+      }
+      
+      // Log export failure
+      await writeAuditLog({
+        userId: 'u_1',
+        action: AUDIT_ACTIONS.EXPORT_FAILURE,
+        targetId: 'current_week',
+        source: 'ui',
+        after: { errors: result.errors, invalidUsers: result.invalidUsers }
+      });
+      
+      return;
+    }
+    
+    if (result.rows) {
+      downloadWrikeExport('Current Week', result.rows);
+      
+      // Log successful export
+      await writeAuditLog({
+        userId: 'u_1',
+        action: AUDIT_ACTIONS.PLANNER_ACTIVITY_EXPORTED,
+        targetId: 'current_week',
+        source: 'ui',
+        after: { exportedCount: result.rows.length }
+      });
+    }
+  };
   
   const getActivityIcon = (channel: string) => {
     switch (channel) {
@@ -237,7 +307,7 @@ function PlannerView({ activities, users }: { activities: Activity[], users: Use
           <p className="text-muted-foreground">7-day campaign activity scheduler</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline">
+          <Button variant="outline" onClick={handleExportToWrike}>
             <Upload className="h-4 w-4 mr-2" />
             Export to Wrike
           </Button>
@@ -247,6 +317,35 @@ function PlannerView({ activities, users }: { activities: Activity[], users: Use
           </Button>
         </div>
       </div>
+      
+      {exportErrors.length > 0 && (
+        <Card className="border-red-200 bg-red-50">
+          <CardHeader>
+            <CardTitle className="text-red-800 flex items-center gap-2">
+              <AlertCircle className="h-5 w-5" />
+              Export Failed
+            </CardTitle>
+            <CardDescription className="text-red-600">
+              Cannot export to Wrike due to the following issues:
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-1 text-sm text-red-700">
+              {exportErrors.map((error, index) => (
+                <li key={index}>• {error}</li>
+              ))}
+            </ul>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="mt-3" 
+              onClick={() => setExportErrors([])}
+            >
+              Dismiss
+            </Button>
+          </CardContent>
+        </Card>
+      )}
       
       <Card>
         <CardContent className="p-6">
@@ -319,6 +418,67 @@ function PlannerView({ activities, users }: { activities: Activity[], users: Use
 }
 
 function UsersView({ users, roles, tiers }: { users: User[], roles: Role[], tiers: Tier[] }) {
+  const [showUserDialog, setShowUserDialog] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const { setUsers } = useInitialData();
+  const { writeAuditLog } = useAuditLog();
+
+  const handleSaveUser = async (userData: Partial<User>) => {
+    if (editingUser) {
+      // Edit existing user
+      setUsers((currentUsers) => 
+        (currentUsers || []).map(user => 
+          user.uid === editingUser.uid ? { ...user, ...userData } : user
+        )
+      );
+      
+      await writeAuditLog({
+        userId: 'u_1', // Mock current user
+        action: AUDIT_ACTIONS.USER_UPDATED,
+        targetId: editingUser.uid,
+        source: 'ui',
+        before: editingUser,
+        after: { ...editingUser, ...userData }
+      });
+    } else {
+      // Create new user
+      const newUser = userData as User;
+      setUsers((currentUsers) => [...(currentUsers || []), newUser]);
+      
+      await writeAuditLog({
+        userId: 'u_1', // Mock current user
+        action: AUDIT_ACTIONS.USER_CREATED,
+        targetId: newUser.uid!,
+        source: 'ui',
+        after: newUser
+      });
+    }
+    
+    setEditingUser(null);
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    setUsers((currentUsers) => 
+      (currentUsers || []).filter(user => user.uid !== userId)
+    );
+    
+    await writeAuditLog({
+      userId: 'u_1', // Mock current user
+      action: AUDIT_ACTIONS.USER_DELETED,
+      targetId: userId,
+      source: 'ui'
+    });
+  };
+
+  const handleEditUser = (user: User) => {
+    setEditingUser(user);
+    setShowUserDialog(true);
+  };
+
+  const handleAddUser = () => {
+    setEditingUser(null);
+    setShowUserDialog(true);
+  };
   const getRoleName = (roleId: string) => roles.find(r => r.roleId === roleId)?.name || roleId;
   const getTierName = (tierId: string) => tiers.find(t => t.tierId === tierId)?.name || tierId;
 
@@ -342,7 +502,7 @@ function UsersView({ users, roles, tiers }: { users: User[], roles: Role[], tier
               <h2 className="text-xl font-semibold">Users & Roles</h2>
               <p className="text-muted-foreground">Manage user accounts and permissions</p>
             </div>
-            <Button>
+            <Button onClick={handleAddUser}>
               <Users className="h-4 w-4 mr-2" />
               Add User
             </Button>
@@ -356,7 +516,7 @@ function UsersView({ users, roles, tiers }: { users: User[], roles: Role[], tier
             <CardContent>
               <div className="space-y-4">
                 {users.map((user) => (
-                  <div key={user.uid} className="flex items-center justify-between p-4 border border-border rounded-lg">
+                  <div key={user.uid} className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-muted/20 cursor-pointer transition-colors" onClick={() => handleEditUser(user)}>
                     <div className="flex items-center gap-4">
                       <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
                         <Users className="h-5 w-5 text-primary" />
@@ -392,13 +552,42 @@ function UsersView({ users, roles, tiers }: { users: User[], roles: Role[], tier
           <ThemeView />
         </TabsContent>
       </Tabs>
+
+      <UserEditDialog
+        open={showUserDialog}
+        onOpenChange={setShowUserDialog}
+        user={editingUser}
+        roles={roles}
+        tiers={tiers}
+        onSave={handleSaveUser}
+        onDelete={handleDeleteUser}
+      />
     </div>
   );
 }
 
 function StoresView({ stores }: { stores: Store[] }) {
-  const [storeData] = useKV<Store[]>('stores', []);
-  const actualStores = stores.length > 0 ? stores : (storeData || []);
+  const actualStores = stores || [];
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const { setStores } = useInitialData();
+  const { writeAuditLog } = useAuditLog();
+
+  const handleImport = async (newStores: Store[]) => {
+    // Add imported stores to existing stores
+    setStores((currentStores) => [...(currentStores || []), ...newStores]);
+    
+    // Log the import action
+    await writeAuditLog({
+      userId: 'u_1', // Mock current user
+      action: AUDIT_ACTIONS.STORE_IMPORTED_SUMMARY,
+      targetId: 'bulk_import',
+      source: 'ui',
+      after: { 
+        importedCount: newStores.length,
+        timestamp: new Date().toISOString()
+      }
+    });
+  };
 
   return (
     <div className="space-y-4">
@@ -408,7 +597,7 @@ function StoresView({ stores }: { stores: Store[] }) {
           <p className="text-muted-foreground">Manage store locations and data</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline">
+          <Button variant="outline" onClick={() => setShowImportDialog(true)}>
             <Upload className="h-4 w-4 mr-2" />
             Import CSV
           </Button>
@@ -452,6 +641,12 @@ function StoresView({ stores }: { stores: Store[] }) {
           </div>
         </CardContent>
       </Card>
+
+      <CsvImportDialog 
+        open={showImportDialog}
+        onOpenChange={setShowImportDialog}
+        onImport={handleImport}
+      />
     </div>
   );
 }
