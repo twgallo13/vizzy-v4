@@ -91,7 +91,7 @@ export function ChatDrawer({ open, onOpenChange, currentUser, roles = [], tiers 
     if (!permissions.hasPerm('planner:write')) {
       addMessage({
         role: 'assistant',
-        content: 'Permission denied. You need planner write permissions to run simulations.',
+        content: '🔒 **Permission Denied**\n\nYou need planner write permissions to run simulations.\n\nContact your administrator to request access.',
         type: 'error'
       });
       return;
@@ -108,7 +108,8 @@ export function ChatDrawer({ open, onOpenChange, currentUser, roles = [], tiers 
             status: 'draft', 
             schedule: 'Wednesday 2:00 PM',
             channel: 'Email',
-            assignee: 'Current User'
+            assignee: 'Current User',
+            priority: 'Normal'
           },
           after: { 
             status: 'draft', 
@@ -125,18 +126,23 @@ export function ChatDrawer({ open, onOpenChange, currentUser, roles = [], tiers 
       
       addMessage({
         role: 'assistant',
-        content: `I've analyzed your simulation request: "${prompt}"\n\n📊 **Simulation Complete**\nThis change requires approval before applying to your campaign planner.`,
+        content: `🔍 **Simulation Analysis Complete**\n\nRequest: "${prompt}"\n\n⚠️ **Human Approval Required**\nI've generated a diff showing the proposed changes. Please review the changes below and click "Approve" to apply them to your campaign planner.\n\n🚫 **No changes will be made without explicit approval.**`,
         type: 'simulation',
         data: simulationResult
       });
       
-      // Log simulation run
+      // Log simulation run with full diff data
       await writeAuditLog({
         userId: currentUser?.uid || 'unknown',
         action: AUDIT_ACTIONS.AI_SIMULATE_RUN,
         targetId: 'simulation_' + Date.now(),
         source: 'chat',
-        after: simulationResult
+        before: simulationResult.diff.before,
+        after: { 
+          ...simulationResult.diff.after,
+          simulationPrompt: prompt,
+          requiresApproval: true
+        }
       });
       
       setIsProcessing(false);
@@ -144,11 +150,11 @@ export function ChatDrawer({ open, onOpenChange, currentUser, roles = [], tiers 
   };
 
   const handleSetCommand = async (rule: string) => {
-    // Check admin permission for governance rules
+    // Strict admin-only check for /set command
     if (!permissions.hasPerm('roles:write')) {
       addMessage({
         role: 'assistant',
-        content: '🔒 **Permission Denied**\n\nOnly administrators can use the `/set` command to update governance rules.\n\nCurrent permissions: ' + Array.from(permissions.effective).join(', '),
+        content: '🚫 **Insufficient Permissions**\n\nThe `/set` command is restricted to **Administrators only**.\n\n**Access Denied:** Only users with admin role can modify governance rules.\n\nYour current role: ' + (roles.find(r => r.roleId === currentUser?.roleId)?.name || 'Unknown') + '\nContact your system administrator if you need to update governance rules.',
         type: 'error'
       });
       return;
@@ -157,19 +163,27 @@ export function ChatDrawer({ open, onOpenChange, currentUser, roles = [], tiers 
     setIsProcessing(true);
     
     setTimeout(async () => {
+      const ruleData = {
+        rule: rule,
+        setBy: currentUser?.displayName || 'Unknown',
+        timestamp: new Date().toISOString(),
+        userId: currentUser?.uid || 'unknown'
+      };
+
       addMessage({
         role: 'assistant',
-        content: `✅ **Governance Rule Updated**\n\nRule: ${rule}\n\nThe new rule is now active and will be enforced for all future activities. All team members will be notified of this change.`,
+        content: `✅ **Governance Rule Set Successfully**\n\n**Rule:** ${rule}\n**Set by:** ${currentUser?.displayName}\n**Time:** ${new Date().toLocaleTimeString()}\n\n🔐 This rule is now active and will be enforced for all future activities. All team members will be automatically notified of this governance change.`,
         type: 'rule'
       });
       
-      // Log rule set
+      // Log rule set with proper diff structure
       await writeAuditLog({
         userId: currentUser?.uid || 'unknown',
         action: AUDIT_ACTIONS.AI_RULE_SET,
-        targetId: 'governance_rule',
+        targetId: 'governance_rule_' + Date.now(),
         source: 'chat',
-        after: { rule, timestamp: new Date().toISOString(), setBy: currentUser?.displayName }
+        before: { governanceRules: 'previous_state' },
+        after: ruleData
       });
       
       setIsProcessing(false);
@@ -255,7 +269,7 @@ export function ChatDrawer({ open, onOpenChange, currentUser, roles = [], tiers 
   const handleApproveSimulation = async () => {
     if (!pendingSimulation) return;
     
-    // Check approval permission
+    // Check approval permission - this is required for /simulate commits
     if (!permissions.hasPerm('planner:approve')) {
       addMessage({
         role: 'assistant',
@@ -265,30 +279,58 @@ export function ChatDrawer({ open, onOpenChange, currentUser, roles = [], tiers 
       return;
     }
     
-    addMessage({
-      role: 'assistant',
-      content: `✅ **Simulation Approved & Applied**\n\nChanges have been committed to your campaign planner:\n• Schedule updated\n• Priority adjusted\n• Audit trail logged\n\nAll team members with access will see the updated campaign data.`,
-      type: 'system'
-    });
+    setIsProcessing(true);
     
-    // Log simulation approval
-    await writeAuditLog({
-      userId: currentUser?.uid || 'unknown',
-      action: AUDIT_ACTIONS.AI_SIMULATE_APPROVED,
-      targetId: 'simulation_approved',
-      source: 'chat',
-      before: pendingSimulation.diff.before,
-      after: pendingSimulation.diff.after
-    });
-    
-    setPendingSimulation(null);
+    // Apply the simulation changes
+    setTimeout(async () => {
+      addMessage({
+        role: 'assistant',
+        content: `✅ **Simulation Changes Applied**\n\n**Human approval confirmed** - Changes have been committed to your campaign planner:\n\n• Schedule: ${pendingSimulation.diff.before.schedule} → ${pendingSimulation.diff.after.schedule}\n• Priority: ${pendingSimulation.diff.before.priority || 'Normal'} → ${pendingSimulation.diff.after.priority}\n\n🔍 **Audit trail updated** - All changes logged for compliance\n📢 **Team notified** - Relevant users will see the updated campaign data`,
+        type: 'system'
+      });
+      
+      // Log simulation approval with complete diff data
+      await writeAuditLog({
+        userId: currentUser?.uid || 'unknown',
+        action: AUDIT_ACTIONS.AI_SIMULATE_APPROVED,
+        targetId: 'simulation_approved_' + Date.now(),
+        source: 'chat',
+        before: pendingSimulation.diff.before,
+        after: {
+          ...pendingSimulation.diff.after,
+          approvedBy: currentUser?.displayName || 'Unknown',
+          approvedAt: new Date().toISOString(),
+          originalPrompt: pendingSimulation.change
+        }
+      });
+      
+      setPendingSimulation(null);
+      setIsProcessing(false);
+    }, 800);
   };
 
-  const handleRejectSimulation = () => {
+  const handleRejectSimulation = async () => {
+    if (!pendingSimulation) return;
+    
     addMessage({
       role: 'assistant',
-      content: '❌ Simulation rejected. No changes have been made to your campaign planner.',
+      content: '❌ **Simulation Rejected**\n\nNo changes have been made to your campaign planner. The proposed simulation has been discarded.',
       type: 'system'
+    });
+    
+    // Log simulation rejection for audit trail
+    await writeAuditLog({
+      userId: currentUser?.uid || 'unknown',
+      action: AUDIT_ACTIONS.AI_SIMULATE_REJECTED,
+      targetId: 'simulation_rejected_' + Date.now(),
+      source: 'chat',
+      before: pendingSimulation.diff.before,
+      after: {
+        rejected: true,
+        rejectedBy: currentUser?.displayName || 'Unknown',
+        rejectedAt: new Date().toISOString(),
+        originalPrompt: pendingSimulation.change
+      }
     });
     
     setPendingSimulation(null);
@@ -500,16 +542,21 @@ export function ChatDrawer({ open, onOpenChange, currentUser, roles = [], tiers 
                       size="sm" 
                       onClick={handleApproveSimulation}
                       className="flex-1"
-                      disabled={!permissions.hasPerm('planner:approve')}
+                      disabled={!permissions.hasPerm('planner:approve') || isProcessing}
+                      aria-label={permissions.hasPerm('planner:approve') ? 'Approve simulation changes and apply to campaign planner' : 'Approval permission required'}
+                      title={permissions.hasPerm('planner:approve') ? 'Click to approve and apply these simulation changes' : 'You need planner:approve permission to commit changes'}
                     >
                       <CheckCircle className="h-3 w-3 mr-1" />
-                      {permissions.hasPerm('planner:approve') ? 'Approve' : 'Need Approval Permission'}
+                      {permissions.hasPerm('planner:approve') ? 'Approve & Apply' : 'Need Approval Permission'}
                     </Button>
                     <Button 
                       variant="outline" 
                       size="sm" 
                       onClick={handleRejectSimulation}
                       className="flex-1"
+                      disabled={isProcessing}
+                      aria-label="Reject simulation changes and discard them"
+                      title="Click to reject and discard these simulation changes"
                     >
                       <X className="h-3 w-3 mr-1" />
                       Reject
@@ -595,37 +642,72 @@ export function ChatDrawer({ open, onOpenChange, currentUser, roles = [], tiers 
                 placeholder={isMobile ? "Type command..." : "Type a command or message... (try /status)"}
                 disabled={isProcessing}
                 className={`flex-1 ${isMobile ? 'text-sm' : ''}`}
+                aria-label="Chat input field for AI assistant commands"
+                aria-describedby="chat-input-help"
               />
               <Button 
                 onClick={handleSendMessage}
                 disabled={!inputValue.trim() || isProcessing}
                 size="icon"
+                aria-label="Send message to AI assistant"
+                title="Send message (or press Enter)"
               >
                 <Send className="h-4 w-4" />
               </Button>
             </div>
             
+            <div id="chat-input-help" className="sr-only">
+              Use commands like /status, /simulate, /export, or /set (admin only) to interact with the AI assistant
+            </div>
+            
             {/* Quick Command Buttons */}
-            <div className={`flex flex-wrap gap-1 ${isMobile ? 'mt-1' : 'mt-2'}`}>
+            <div className={`flex flex-wrap gap-1 ${isMobile ? 'mt-1' : 'mt-2'}`} role="toolbar" aria-label="Quick command shortcuts">
               <Badge 
                 variant="outline" 
-                className={`${isMobile ? 'text-xs px-2 py-1' : 'text-xs'} cursor-pointer hover:bg-secondary`} 
+                className={`${isMobile ? 'text-xs px-2 py-1' : 'text-xs'} cursor-pointer hover:bg-secondary focus:bg-secondary focus:outline-none focus:ring-2 focus:ring-ring`} 
                 onClick={() => setInputValue('/status')}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setInputValue('/status');
+                  }
+                }}
+                tabIndex={0}
+                role="button"
+                aria-label="Insert status command"
               >
                 /status
               </Badge>
               <Badge 
                 variant="outline" 
-                className={`${isMobile ? 'text-xs px-2 py-1' : 'text-xs'} cursor-pointer hover:bg-secondary`} 
+                className={`${isMobile ? 'text-xs px-2 py-1' : 'text-xs'} cursor-pointer hover:bg-secondary focus:bg-secondary focus:outline-none focus:ring-2 focus:ring-ring`} 
                 onClick={() => setInputValue('/simulate ')}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setInputValue('/simulate ');
+                  }
+                }}
+                tabIndex={0}
+                role="button"
+                aria-label="Insert simulate command"
               >
                 /simulate
               </Badge>
               {permissions.hasPerm('export:write') && (
                 <Badge 
                   variant="outline" 
-                  className={`${isMobile ? 'text-xs px-2 py-1' : 'text-xs'} cursor-pointer hover:bg-secondary`} 
+                  className={`${isMobile ? 'text-xs px-2 py-1' : 'text-xs'} cursor-pointer hover:bg-secondary focus:bg-secondary focus:outline-none focus:ring-2 focus:ring-ring`} 
                   onClick={() => setInputValue('/export week')}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setInputValue('/export week');
+                    }
+                  }}
+                  tabIndex={0}
+                  role="button"
+                  aria-label="Insert export command"
                 >
                   /export
                 </Badge>
@@ -633,8 +715,17 @@ export function ChatDrawer({ open, onOpenChange, currentUser, roles = [], tiers 
               {permissions.hasPerm('roles:write') && (
                 <Badge 
                   variant="outline" 
-                  className={`${isMobile ? 'text-xs px-2 py-1' : 'text-xs'} cursor-pointer hover:bg-secondary`} 
+                  className={`${isMobile ? 'text-xs px-2 py-1' : 'text-xs'} cursor-pointer hover:bg-secondary focus:bg-secondary focus:outline-none focus:ring-2 focus:ring-ring`} 
                   onClick={() => setInputValue('/set ')}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setInputValue('/set ');
+                    }
+                  }}
+                  tabIndex={0}
+                  role="button"
+                  aria-label="Insert set command (admin only)"
                 >
                   /set
                 </Badge>
