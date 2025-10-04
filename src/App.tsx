@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Users, Building2, Calendar, Settings, MessageCircle, Plus, Upload, CheckCircle, Clock, Send, AlertCircle } from 'lucide-react';
+import { Users, Building2, Calendar, Settings, MessageCircle, Plus, Upload, CheckCircle, Clock, Send, AlertCircle, BarChart3, Activity as ActivityIcon } from 'lucide-react';
 import type { User, Store, Role, Tier } from '@/models/core';
 import type { Activity } from '@/models/planner';
 import { useInitialData } from '@/hooks/useInitialData';
