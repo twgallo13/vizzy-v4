@@ -14,8 +14,9 @@ import { CsvImportDialog } from '@/components/stores/CsvImportDialog';
 import { UserEditDialog } from '@/components/users/UserEditDialog';
 import { ChatDrawer } from '@/components/chat/ChatDrawer';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { StatusPanel } from '@/components/StatusPanel';
 
-type View = 'dashboard' | 'planner' | 'settings-users' | 'settings-stores' | 'settings-theme' | 'settings-roles';
+type View = 'dashboard' | 'planner' | 'settings-users' | 'settings-stores' | 'settings-theme' | 'settings-roles' | 'settings-status';
 
 function App() {
   const [currentView, setCurrentView] = useState<View>('dashboard');
@@ -42,6 +43,8 @@ function App() {
         return <RolesAndTiersView roles={roles || []} tiers={tiers || []} permissions={permissions} />;
       case 'settings-theme':
         return <ThemeView permissions={permissions} />;
+      case 'settings-status':
+        return <StatusPanel />;
       default:
         return <DashboardView users={users || []} stores={stores || []} activities={activities || []} />;
     }
@@ -316,22 +319,35 @@ function PlannerView({ activities, users, permissions }: {
       return acc;
     }, {} as Record<string, User>);
     
-    // Try to export
+    // Try to export with strict preflight validation
     const result = exportDayToWrike('Current Week', mockDayCard, usersById);
     
     if (!result.success) {
-      setExportErrors(result.errors || []);
+      const allErrors = [...(result.errors || [])];
+      
+      // Add specific wrikeName validation errors
       if (result.invalidUsers) {
-        setExportErrors(prev => [...prev, ...result.invalidUsers!]);
+        allErrors.push(...result.invalidUsers);
       }
       
-      // Log export failure
+      setExportErrors(allErrors);
+      
+      // Log export failure with detailed information
       await writeAuditLog({
-        userId: 'u_1',
+        userId: currentUser?.uid || 'u_1',
         action: AUDIT_ACTIONS.EXPORT_FAILURE,
         targetId: 'current_week',
         source: 'ui',
-        after: { errors: result.errors, invalidUsers: result.invalidUsers }
+        after: { 
+          errors: result.errors, 
+          invalidUsers: result.invalidUsers,
+          offenderUIDs: mockDayCard.activities
+            .map(a => usersById[a.ownerUid])
+            .filter(u => u && u.wrikeName !== `${u.firstName} ${u.lastName}`)
+            .map(u => u!.uid),
+          totalActivities: mockDayCard.activities.length,
+          timestamp: new Date().toISOString()
+        }
       });
       
       return;
@@ -342,11 +358,15 @@ function PlannerView({ activities, users, permissions }: {
       
       // Log successful export
       await writeAuditLog({
-        userId: 'u_1',
+        userId: currentUser?.uid || 'u_1',
         action: AUDIT_ACTIONS.PLANNER_ACTIVITY_EXPORTED,
         targetId: 'current_week',
         source: 'ui',
-        after: { exportedCount: result.rows.length }
+        after: { 
+          exportedCount: result.rows.length,
+          fileName: 'Current Week_wrike_export.xlsx',
+          timestamp: new Date().toISOString()
+        }
       });
     }
   };
@@ -389,25 +409,40 @@ function PlannerView({ activities, users, permissions }: {
           <CardHeader>
             <CardTitle className="text-red-800 flex items-center gap-2">
               <AlertCircle className="h-5 w-5" />
-              Export Failed
+              Export Blocked - wrikeName Validation Failed
             </CardTitle>
             <CardDescription className="text-red-600">
-              Cannot export to Wrike due to the following issues:
+              Export cannot proceed until all wrikeName issues are resolved. Each user's wrikeName must exactly match their firstName + " " + lastName.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <ul className="space-y-1 text-sm text-red-700">
-              {exportErrors.map((error, index) => (
-                <li key={index}>• {error}</li>
-              ))}
-            </ul>
+            <div className="space-y-3">
+              <div className="text-sm font-medium text-red-800 mb-2">Validation Errors:</div>
+              <ul className="space-y-2 text-sm text-red-700">
+                {exportErrors.map((error, index) => (
+                  <li key={index} className="flex items-start gap-2 p-2 bg-red-100 border border-red-200 rounded">
+                    <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                    <span>• {error}</span>
+                  </li>
+                ))}
+              </ul>
+              
+              <div className="mt-4 p-3 bg-red-100 border border-red-200 rounded">
+                <div className="text-sm font-medium text-red-800 mb-1">Required Action:</div>
+                <div className="text-sm text-red-700">
+                  Go to Settings → Users and update each user's first name and last name so their auto-generated wrikeName matches exactly. 
+                  The export will only proceed when all validation checks pass.
+                </div>
+              </div>
+            </div>
+            
             <Button 
               variant="outline" 
               size="sm" 
               className="mt-3" 
               onClick={() => setExportErrors([])}
             >
-              Dismiss
+              Acknowledge & Dismiss
             </Button>
           </CardContent>
         </Card>
@@ -634,6 +669,7 @@ function UsersView({ users, roles, tiers, permissions }: {
           <TabsTrigger value="roles">Roles & Tiers</TabsTrigger>
           <TabsTrigger value="stores">Stores</TabsTrigger>
           <TabsTrigger value="theme">Theme</TabsTrigger>
+          <TabsTrigger value="status">System Status</TabsTrigger>
         </TabsList>
         
         <TabsContent value="users" className="space-y-4">
@@ -696,6 +732,10 @@ function UsersView({ users, roles, tiers, permissions }: {
         
         <TabsContent value="theme">
           <ThemeView permissions={permissions} />
+        </TabsContent>
+        
+        <TabsContent value="status">
+          <StatusPanel />
         </TabsContent>
       </Tabs>
 

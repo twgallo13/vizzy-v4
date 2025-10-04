@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { AlertCircle } from 'lucide-react';
 import type { User, Role, Tier } from '@/models/core';
 import { validateWrikeName } from '@/lib/permissions';
+import { useAuditLog, AUDIT_ACTIONS } from '@/lib/audit';
 
 interface UserEditDialogProps {
   open: boolean;
@@ -66,6 +67,7 @@ export function UserEditDialog({
   
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { writeAuditLog } = useAuditLog();
 
   const isEditMode = !!user;
   const computedWrikeName = `${formData.firstName.trim()} ${formData.lastName.trim()}`;
@@ -143,7 +145,7 @@ export function UserEditDialog({
     if (formData.firstName.trim() && formData.lastName.trim()) {
       const expectedWrikeName = computedWrikeName;
       if (!validateWrikeName(formData.firstName.trim(), formData.lastName.trim(), expectedWrikeName)) {
-        newErrors.wrikeName = 'wrikeName validation failed (this should not happen)';
+        newErrors.wrikeName = `wrikeName must exactly match "${expectedWrikeName}"`;
       }
     }
 
@@ -184,6 +186,16 @@ export function UserEditDialog({
       } else {
         userData.uid = user.uid;
       }
+
+      // Write audit log before saving
+      await writeAuditLog({
+        userId: 'u_1', // In real app, get current user ID from auth
+        action: isEditMode ? AUDIT_ACTIONS.USER_UPDATED : AUDIT_ACTIONS.USER_CREATED,
+        targetId: userData.uid!,
+        source: 'ui',
+        before: isEditMode ? user : {},
+        after: userData
+      });
 
       onSave(userData);
       onOpenChange(false);
@@ -234,9 +246,11 @@ export function UserEditDialog({
                 value={formData.firstName}
                 onChange={(e) => setFormData(prev => ({ ...prev, firstName: e.target.value }))}
                 className={errors.firstName ? 'border-red-500' : ''}
+                aria-describedby={errors.firstName ? 'firstName-error' : undefined}
+                aria-invalid={!!errors.firstName}
               />
               {errors.firstName && (
-                <p className="text-sm text-red-500 flex items-center gap-1">
+                <p id="firstName-error" className="text-sm text-red-500 flex items-center gap-1" role="alert">
                   <AlertCircle className="h-3 w-3" />
                   {errors.firstName}
                 </p>
@@ -250,9 +264,11 @@ export function UserEditDialog({
                 value={formData.lastName}
                 onChange={(e) => setFormData(prev => ({ ...prev, lastName: e.target.value }))}
                 className={errors.lastName ? 'border-red-500' : ''}
+                aria-describedby={errors.lastName ? 'lastName-error' : undefined}
+                aria-invalid={!!errors.lastName}
               />
               {errors.lastName && (
-                <p className="text-sm text-red-500 flex items-center gap-1">
+                <p id="lastName-error" className="text-sm text-red-500 flex items-center gap-1" role="alert">
                   <AlertCircle className="h-3 w-3" />
                   {errors.lastName}
                 </p>
@@ -277,9 +293,11 @@ export function UserEditDialog({
               value={formData.email}
               onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
               className={errors.email ? 'border-red-500' : ''}
+              aria-describedby={errors.email ? 'email-error' : undefined}
+              aria-invalid={!!errors.email}
             />
             {errors.email && (
-              <p className="text-sm text-red-500 flex items-center gap-1">
+              <p id="email-error" className="text-sm text-red-500 flex items-center gap-1" role="alert">
                 <AlertCircle className="h-3 w-3" />
                 {errors.email}
               </p>
@@ -362,7 +380,7 @@ export function UserEditDialog({
                 </span>
               </div>
               {errors.wrikeName && (
-                <p className="text-sm text-red-500 flex items-center gap-1">
+                <p id="wrikeName-error" className="text-sm text-red-500 flex items-center gap-1" role="alert">
                   <AlertCircle className="h-3 w-3" />
                   {errors.wrikeName}
                 </p>
