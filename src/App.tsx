@@ -149,8 +149,8 @@ function App() {
         open={showChatDrawer}
         onOpenChange={setShowChatDrawer}
         currentUser={currentUser}
-        roles={roles}
-        tiers={tiers}
+        roles={roles || null}
+        tiers={tiers || null}
       />
 
       {/* Floating Action Button for Chat */}
