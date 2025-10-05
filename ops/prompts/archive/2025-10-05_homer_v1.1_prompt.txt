@@ -1,0 +1,74 @@
+[HOMER v1.1] Set up Prompts Ledger, backfill v1.0, merge PR #1, boot dev, and report URL.
+
+RULES
+- I am not a developer. Perform ALL git and code steps for me automatically.
+- Record THIS PROMPT’S FULL TEXT in the repo.
+- Summarize your work in the repo too.
+- Do not ask questions; do the work and report the results.
+
+STEPS
+1) Git prep
+   - pkill -f vite || true
+   - git fetch --all --prune
+   - git checkout main
+   - git pull --rebase origin main
+
+2) Create a Prompts Ledger
+   - Create folders:
+       ops/prompts/archive
+   - Create/append ops/prompts/PROMPTS_LOG.md with sections:
+       # Prompts Ledger
+       - An index table: Date | Agent | Version | Branch/PR | Prompt File | Summary File
+   - For the PREVIOUS run (Homer v1.0 – audit & scaffolds that opened PR #1):
+       - Write the full prompt text you received from me (the “autopilot” audit/scaffold prompt) to:
+           ops/prompts/archive/2025-10-05_homer_v1.0_prompt.txt
+       - Write your summary (the output you posted that lists the branch, changes, and PR URL) to:
+           ops/prompts/archive/2025-10-05_homer_v1.0_summary.md
+       - Add an index row to PROMPTS_LOG.md pointing to those two files and to PR #1.
+
+   - For THIS run (Homer v1.1):
+       - Save THIS prompt text to:
+           ops/prompts/archive/2025-10-05_homer_v1.1_prompt.txt
+       - Create an empty summary placeholder:
+           ops/prompts/archive/2025-10-05_homer_v1.1_summary.md
+         (You will fill it in at the end.)
+
+3) Merge PR #1 (audit fixes)
+   - If there is an open PR #1, merge it with a merge commit (not squash), then:
+       - git pull --rebase origin main
+       - Create a tag: git tag -a audit-fixes-v1 -m "Audit fixes batch 1"
+       - git push origin --tags
+   - If PR #1 is already merged, skip merge and still create the tag if not present.
+
+4) Start dev server in DEMO mode
+   - Ensure apps/web/.env.local has:
+       VITE_ENV=dev
+       VITE_USE_MOCKS=1
+   - Start: npm run dev -w apps/web &
+   - Detect the forwarded port and produce the Codespaces preview URL.
+   - Append ?role=admin&demo=1 to the URL.
+
+5) Fill in THIS run’s summary file
+   - Write to ops/prompts/archive/2025-10-05_homer_v1.1_summary.md:
+       - Date/time (UTC)
+       - What you merged/tagged
+       - Dev server port
+       - Exact preview URL with ?role=admin&demo=1
+       - Quick verification checklist results:
+         [x] /assignments and /assignment both work
+         [x] route_view telemetry firing on navigation
+         [x] mocks active (no Firebase calls)
+   - Append a new row for v1.1 to ops/prompts/PROMPTS_LOG.md with links to the prompt + summary.
+
+6) Commit and push
+   - git add ops/prompts
+   - git commit -m "Prompts Ledger: add v1.0 backfill and v1.1 entry; merge+tag; dev URL"
+   - git push
+
+7) Final output to me (in chat)
+   - ✅ Merged (or already merged): PR #1
+   - 🏷️ Tag(s) pushed: audit-fixes-v1 (if new)
+   - 🌐 Dev URL: <URL with ?role=admin&demo=1>
+   - 📒 Ledger updated: ops/prompts/PROMPTS_LOG.md
+   - 📄 Prompt file: ops/prompts/archive/2025-10-05_homer_v1.1_prompt.txt
+   - 🧾 Summary file: ops/prompts/archive/2025-10-05_homer_v1.1_summary.md

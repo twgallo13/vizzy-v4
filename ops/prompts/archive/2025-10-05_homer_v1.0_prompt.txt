@@ -1,0 +1,90 @@
+Perform a full Vizzy v4 repo audit against the expected spec (below), print a concise report, and offer to scaffold any missing pieces on a branch.
+
+EXPECTED (spec):
+Routes: "/", "/planner", "/assignments", "/calendar", "/ai", "/governance", "/data", "/admin/wrike-schema", and a 404 route.
+Nav: all above visible for admin; role-gating for others.
+RBAC/TBAC: can(user, verb, resource[, record]) present; TBAC (team/time window) hooks in rules layer.
+Telemetry: route_view and action events exist in a lib.
+API layer: uses mocks when VITE_USE_MOCKS=1; switchable to Firestore later.
+Functions: folder exists with stubs (validateCampaign, submitForReview, approveCampaign, exportToWrike, aiSuggest).
+Firebase files: firebase/firestore.rules, firestore.indexes.json.
+CI: workflow that runs lint, typecheck, unit, e2e, a11y, performance (Lighthouse or budgets).
+
+TASKS (do exactly, report everything clearly):
+
+1) Enumerate structure (do NOT print thousands of lines)
+- List top-level folders and key files:
+  - apps/web/src/config/nav.config.ts (exists? items?)
+  - apps/web/src/routes/* (names only)
+  - apps/web/src/lib/{api.ts,mockData.ts,rbac-tbac.ts,telemetry.ts} (exists?)
+  - apps/web/src/components/{Layout.tsx,Header.tsx,RoleSwitcher.tsx} (exists?)
+  - apps/web/src/app/{init.ts, demoMode.ts, roleBootstrap.ts} (exists?)
+  - functions/src/{index.ts,callables/*,jobs/*,integrations/*,lib/*} (exists?)
+  - firebase/{firestore.rules,firestore.indexes.json,storage.rules} (exists?)
+  - .github/workflows/* (exists?)
+- Print each as: `FOUND | MISSING` with the exact path.
+
+2) Extract navigation & compare to spec
+- Parse apps/web/src/config/nav.config.ts and print a table:
+  id | path | label | roles
+- Compare to expected routes; mark `Missing in nav` or `Extra in nav`.
+
+3) Detect routes and compare to spec
+- From apps/web/src/routes, print a table:
+  file | default export? | path it serves (from router) | lazy?
+- Infer route paths from your router config. If router is split, read where routes are defined.
+- Mark each expected path as `FOUND` or `MISSING`.
+
+4) RBAC/TBAC audit
+- Open apps/web/src/lib/rbac-tbac.ts and confirm a `can(user, ...)` API exists.
+- Print: Does dev mode short-circuit? Does production have a permissions matrix?
+- If TBAC or time-window logic exists elsewhere (rules/governance engine), note the file.
+
+5) Telemetry audit
+- Locate telemetry util (apps/web/src/lib/telemetry.ts or similar). Print events present (route_view, approval_decision, export_request, etc.). Mark `FOUND` or `MISSING`.
+
+6) API layer audit
+- Open apps/web/src/lib/api.ts (or ApiService). Confirm mock switch:
+  - `VITE_USE_MOCKS=1` → mock data functions used.
+  - Otherwise → Firebase paths (can be TODO).
+- Print which functions exist: listCampaigns, getCampaign, submitForReview, approveCampaign, exportToWrike, aiSuggest (mark each found/missing).
+
+7) Functions & Firebase files
+- Print whether functions/src/callables has stubs for validateCampaign, submitForReview, approveCampaign, exportToWrike, aiSuggest.
+- Print existence of firebase/firestore.rules and firestore.indexes.json.
+
+8) CI workflow
+- Print the workflow(s) names under .github/workflows
+- For each, list which checks it runs (lint, typecheck, unit, e2e, axe, lighthouse/budgets). Mark `FOUND` or `MISSING`.
+
+9) Produce a gap report
+- Sections:
+  - Missing ROUTES
+  - Missing NAV items (or mismatched labels)
+  - Missing API calls
+  - Missing Functions stubs
+  - Missing Telemetry events
+  - Missing Firebase files
+  - CI gaps
+- Keep it concise; bullet each item with exact file/path to add.
+
+10) OFFER (opt-in): Auto-scaffold missing UI pages on a branch (no Firebase)
+- If there are missing routes (e.g., /data or /admin/wrike-schema):
+  - Create branch: `fix/audit-scaffolds`
+  - For each missing route, create `apps/web/src/routes/<Name>Page.tsx` with a minimal, production-safe placeholder (title, stub content, TODOs), and lazy-load via router.
+  - Update nav.config.ts labels/paths to match spec (rename “AI Assistant” → “AI Control” if needed).
+  - Add 404 `NotFoundPage.tsx` if missing and wire it.
+  - `git add -A && git commit -m "Audit: scaffold missing routes, align nav labels"`
+  - `git push -u origin fix/audit-scaffolds`
+  - Print the PR command or create the PR if gh CLI available.
+
+11) Print the final result
+- A single markdown block:
+  - **Repo Audit Summary** (checklist with ✅/⚠️)
+  - Any generated branch/PR links
+  - Exact next commands to run if I want you to proceed with scaffolding.
+
+Important:
+- DO NOT connect to Firebase or start emulators.
+- Keep changes minimal and TypeScript-safe.
+- If a file is present under a different name, note that mapping.
