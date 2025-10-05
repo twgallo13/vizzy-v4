@@ -11,6 +11,7 @@
     "dev": "concurrently \"npm run dev:web\" \"npm run dev:emulators\"",
     "dev:web": "npm run dev --workspace=apps/web",
     "dev:emulators": "firebase emulators:start",
+    "preview": "npm run preview --workspace=apps/web -- --port 5000",
     "build": "npm run build --workspace=apps/web && npm run build --workspace=functions",
     "test": "npm run test --workspaces",
     "test:unit": "npm run test --workspace=apps/web",
@@ -27,9 +28,12 @@
     "emulators:firestore": "firebase emulators:start --only firestore --project vizzy-local",
     "seed:raw": "tsx apps/web/scripts/seed.ts",
     "seed": "cross-env FIRESTORE_EMULATOR_HOST=127.0.0.1:8081 npm run seed:raw",
-    "seed:withEmu": "firebase emulators:exec --only firestore --project vizzy-local \"npm run seed:raw\""
+    "seed:withEmu": "firebase emulators:exec --only firestore --project vizzy-local \"npm run seed:raw\"",
+    "axe": "node ./scripts/axe-scan.mjs"
   },
   "devDependencies": {
+    "@axe-core/cli": "^4.9.1",
+    "@axe-core/puppeteer": "^4.9.1",
     "@typescript-eslint/eslint-plugin": "^6.21.0",
     "@typescript-eslint/parser": "^6.21.0",
     "concurrently": "^8.2.2",
@@ -37,6 +41,7 @@
     "eslint": "^8.57.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-prettier": "^5.1.3",
+  "puppeteer": "^22.13.1",
     "prettier": "^3.2.5",
     "tsx": "^4.20.6",
     "typescript": "^5.3.3"

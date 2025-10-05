@@ -118,10 +118,33 @@ jobs:
       - name: Install Lighthouse CI
         run: npm install -g @lhci/cli@0.12.x
 
-      - name: Run Lighthouse CI
+      - name: Run Lighthouse CI (with budgets)
         run: lhci autorun
         env:
           LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
+
+      - name: Start preview server
+        run: npm run preview &
+
+      - name: Wait for preview to be ready
+        run: |
+          for i in {1..30}; do
+            if curl -sSf http://localhost:5000 > /dev/null; then
+              echo "Preview is up"; break;
+            fi
+            echo "Waiting for preview... ($i)"; sleep 1;
+          done
+
+      - name: Run Axe scan (Puppeteer)
+        run: npm run axe
+
+      - name: Upload Axe report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: axe-report
+          path: axe-report.json
+          retention-days: 14
 
   # Security audit
   security-audit:

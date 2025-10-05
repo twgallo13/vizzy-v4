@@ -1,0 +1,1 @@
+[HOMER v1.2] Add Lighthouse budgets + axe to CI, record this prompt + summary, open PR. Ensure LHCI uses budgets.json, add Axe scan against preview, and update Prompts Ledger. Commit, push branch ci/polish-budgets-axe, and open PR.

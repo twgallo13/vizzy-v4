@@ -5,6 +5,9 @@ module.exports = {
       startServerCommand: 'npm run preview',
       startServerReadyPattern: 'Local:',
       startServerReadyTimeout: 30000,
+      settings: {
+        budgetsPath: 'budgets.json',
+      },
     },
     assert: {
       assertions: {
