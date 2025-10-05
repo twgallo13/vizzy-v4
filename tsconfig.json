@@ -1,6 +1,5 @@
 {
   "compilerOptions": {
-<<<<<<< HEAD
     "target": "ES2022",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
@@ -25,36 +24,5 @@
   "references": [
     { "path": "./apps/web" },
     { "path": "./functions" }
-=======
-    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
-    "target": "ES2020",
-    "useDefineForClassFields": true,
-    "lib": [
-      "ES2020",
-      "DOM",
-      "DOM.Iterable"
-    ],
-    "module": "ESNext",
-    "skipLibCheck": true,
-    "strictNullChecks": true,
-    /* Bundler mode */
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "isolatedModules": true,
-    "moduleDetection": "force",
-    "noEmit": true,
-    "jsx": "react-jsx",
-    /* Linting */
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true,
-    "paths": {
-      "@/*": [
-        "./src/*"
-      ]
-    },
-  },
-  "include": [
-    "src"
->>>>>>> 21c58f78115a45d42f40dd19a8a47c7f292f2073
   ]
 }

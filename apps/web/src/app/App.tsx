@@ -15,6 +15,7 @@ const GovernancePage = React.lazy(() => import('@/routes/GovernancePage'));
 const CalendarPage = React.lazy(() => import('@/routes/CalendarPage'));
 const AssignmentPage = React.lazy(() => import('@/routes/AssignmentPage'));
 const AdminWrikeSchemaPage = React.lazy(() => import('@/routes/admin/WrikeSchemaPage'));
+const DataPage = React.lazy(() => import('@/routes/DataPage'));
 
 // Initialize Firebase and app services
 init();
@@ -103,6 +104,8 @@ function getRouteComponent(path: string) {
       return CalendarPage;
     case '/assignment':
       return AssignmentPage;
+    case '/data':
+      return DataPage;
     default:
       return () => <div>Route not implemented: {path}</div>;
   }

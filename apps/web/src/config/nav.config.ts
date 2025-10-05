@@ -45,7 +45,7 @@ export const NAV = {
         },
         {
           id: 'ai',
-          label: 'AI Assistant',
+          label: 'AI Control',
           path: '/ai',
           icon: Brain,
           description: 'AI-powered suggestions and automation',
@@ -89,6 +89,15 @@ export const NAV = {
       label: 'Administration',
       items: [
         {
+          id: 'data',
+          label: 'Data',
+          path: '/data',
+          icon: BarChart3,
+          description: 'Analytics & exports (demo)',
+          requiresAuth: true,
+          roles: ['admin', 'manager', 'analyst'],
+        },
+        {
           id: 'wrike-schema',
           label: 'Wrike Schema',
           path: '/admin/wrike-schema',
@@ -130,7 +139,11 @@ export const NAV = {
   
   // Flattened routes for router
   get routes(): NavItem[] {
-    return this.sections.flatMap(section => section.items);
+    const items: NavItem[] = [];
+    this.sections.forEach((section) => {
+      section.items.forEach((item) => items.push(item as NavItem));
+    });
+    return items;
   },
   
   // Quick actions for command palette
