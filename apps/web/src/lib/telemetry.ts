@@ -1,6 +1,7 @@
 import { db } from '@/app/init';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { analytics } from '@/app/init';
+import { logEvent as firebaseLogEvent } from 'firebase/analytics';
 
 export interface TelemetryEvent {
   id?: string;
@@ -23,8 +24,9 @@ export interface TelemetryConfig {
   flushInterval: number;
 }
 
+const envAny = (import.meta as any).env || {};
 const config: TelemetryConfig = {
-  enabled: import.meta.env.PROD || import.meta.env.VITE_TELEMETRY_ENABLED === 'true',
+  enabled: Boolean(envAny.PROD) || envAny.VITE_TELEMETRY_ENABLED === 'true',
   sampleRate: 1.0,
   batchSize: 10,
   flushInterval: 5000, // 5 seconds
@@ -46,12 +48,15 @@ function shouldSample(): boolean {
 }
 
 function getBaseEvent(): Partial<TelemetryEvent> {
-  return {
+  const base: Partial<TelemetryEvent> = {
     sessionId,
     userAgent: navigator.userAgent,
     url: window.location.href,
-    referrer: document.referrer || undefined,
   };
+  if (document.referrer) {
+    base.referrer = document.referrer;
+  }
+  return base;
 }
 
 export async function track(
@@ -64,14 +69,17 @@ export async function track(
     return;
   }
 
+  const base = getBaseEvent();
   const telemetryEvent: TelemetryEvent = {
-    ...getBaseEvent(),
+    ...base,
     event,
     payload,
     outcome,
-    metadata,
     timestamp: new Date(),
-  };
+  } as TelemetryEvent;
+  if (metadata) {
+    (telemetryEvent as any).metadata = metadata;
+  }
 
   // Add to queue
   eventQueue.push(telemetryEvent);
@@ -79,10 +87,7 @@ export async function track(
   // Send to Firebase Analytics if available
   if (analytics && outcome === 'ok') {
     try {
-      analytics.logEvent(event, {
-        ...payload,
-        outcome,
-      });
+      firebaseLogEvent(analytics as any, event, { ...payload, outcome });
     } catch (error) {
       console.warn('Failed to send event to Firebase Analytics:', error);
     }
@@ -187,6 +192,11 @@ export function trackPageView(
     title,
     ...metadata,
   });
+}
+
+// Route view tracking (explicit event per spec)
+export function trackRouteView(path: string): void {
+  track('route_view', { path });
 }
 
 // API call tracking

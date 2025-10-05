@@ -1,5 +1,5 @@
-import React, { Suspense } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import React, { Suspense, useEffect } from 'react';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { init } from './init';
@@ -7,6 +7,7 @@ import { Layout } from '@/components/Layout';
 import { CommandPalette } from '@/components/CommandPalette';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { NAV } from '@/config/nav.config';
+import { trackRouteView } from '@/lib/telemetry';
 
 // Lazy load route components
 const PlannerPage = React.lazy(() => import('@/routes/PlannerPage'));
@@ -21,6 +22,13 @@ const DataPage = React.lazy(() => import('@/routes/DataPage'));
 init();
 
 function App(): JSX.Element {
+  const location = useLocation();
+
+  // Track route_view on navigation
+  useEffect(() => {
+    trackRouteView(location.pathname);
+  }, [location.pathname]);
+
   return (
     <div className="min-h-screen bg-secondary-50">
       <Layout>
@@ -48,6 +56,9 @@ function App(): JSX.Element {
                   />
                 );
               })}
+
+              {/* Backwards-compatible alias for /assignment */}
+              <Route path="/assignment" element={<AssignmentPage />} />
               
               {/* Admin routes */}
               <Route

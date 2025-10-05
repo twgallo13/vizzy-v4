@@ -77,7 +77,7 @@ export const NAV = {
         {
           id: 'assignment',
           label: 'Assignments',
-          path: '/assignment',
+          path: '/assignments',
           icon: UserCheck,
           description: 'Task and resource assignments',
           requiresAuth: true,
