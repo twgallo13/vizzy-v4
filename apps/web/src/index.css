@@ -1,0 +1,82 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+  
+  body {
+    @apply bg-secondary-50 text-secondary-900 antialiased;
+  }
+  
+  * {
+    @apply border-secondary-200;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50;
+  }
+  
+  .btn-primary {
+    @apply btn bg-primary-600 text-white hover:bg-primary-700 active:bg-primary-800;
+  }
+  
+  .btn-secondary {
+    @apply btn bg-secondary-100 text-secondary-900 hover:bg-secondary-200 active:bg-secondary-300;
+  }
+  
+  .btn-danger {
+    @apply btn bg-danger-600 text-white hover:bg-danger-700 active:bg-danger-800;
+  }
+  
+  .btn-ghost {
+    @apply btn text-secondary-700 hover:bg-secondary-100 active:bg-secondary-200;
+  }
+  
+  .card {
+    @apply rounded-lg border border-secondary-200 bg-white p-6 shadow-sm;
+  }
+  
+  .input {
+    @apply block w-full rounded-lg border border-secondary-300 px-3 py-2 text-sm placeholder-secondary-500 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:bg-secondary-50 disabled:text-secondary-500;
+  }
+  
+  .label {
+    @apply block text-sm font-medium text-secondary-700 mb-1;
+  }
+  
+  .sidebar {
+    @apply fixed left-0 top-0 z-40 h-screen w-64 bg-white border-r border-secondary-200 transition-transform;
+  }
+  
+  .main-content {
+    @apply ml-64 min-h-screen bg-secondary-50;
+  }
+  
+  .command-palette {
+    @apply fixed inset-0 z-50 bg-black/50 backdrop-blur-sm;
+  }
+  
+  .command-palette-content {
+    @apply mx-auto mt-20 max-w-2xl rounded-lg bg-white shadow-xl;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}

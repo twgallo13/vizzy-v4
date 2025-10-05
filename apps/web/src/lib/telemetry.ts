@@ -1,0 +1,249 @@
+import { db } from '@/app/init';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { analytics } from '@/app/init';
+
+export interface TelemetryEvent {
+  id?: string;
+  event: string;
+  payload: Record<string, unknown>;
+  outcome: 'ok' | 'error' | 'warning';
+  userId?: string;
+  sessionId?: string;
+  timestamp?: Date;
+  userAgent?: string;
+  url?: string;
+  referrer?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface TelemetryConfig {
+  enabled: boolean;
+  sampleRate: number;
+  batchSize: number;
+  flushInterval: number;
+}
+
+const config: TelemetryConfig = {
+  enabled: import.meta.env.PROD || import.meta.env.VITE_TELEMETRY_ENABLED === 'true',
+  sampleRate: 1.0,
+  batchSize: 10,
+  flushInterval: 5000, // 5 seconds
+};
+
+let eventQueue: TelemetryEvent[] = [];
+let flushTimer: NodeJS.Timeout | null = null;
+
+// Initialize session tracking
+const sessionId = generateSessionId();
+const startTime = Date.now();
+
+function generateSessionId(): string {
+  return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
+function shouldSample(): boolean {
+  return Math.random() < config.sampleRate;
+}
+
+function getBaseEvent(): Partial<TelemetryEvent> {
+  return {
+    sessionId,
+    userAgent: navigator.userAgent,
+    url: window.location.href,
+    referrer: document.referrer || undefined,
+  };
+}
+
+export async function track(
+  event: string,
+  payload: Record<string, unknown> = {},
+  outcome: 'ok' | 'error' | 'warning' = 'ok',
+  metadata?: Record<string, unknown>
+): Promise<void> {
+  if (!config.enabled || !shouldSample()) {
+    return;
+  }
+
+  const telemetryEvent: TelemetryEvent = {
+    ...getBaseEvent(),
+    event,
+    payload,
+    outcome,
+    metadata,
+    timestamp: new Date(),
+  };
+
+  // Add to queue
+  eventQueue.push(telemetryEvent);
+
+  // Send to Firebase Analytics if available
+  if (analytics && outcome === 'ok') {
+    try {
+      analytics.logEvent(event, {
+        ...payload,
+        outcome,
+      });
+    } catch (error) {
+      console.warn('Failed to send event to Firebase Analytics:', error);
+    }
+  }
+
+  // Auto-flush if queue is full
+  if (eventQueue.length >= config.batchSize) {
+    await flush();
+  } else if (!flushTimer) {
+    // Set timer for next flush
+    flushTimer = setTimeout(flush, config.flushInterval);
+  }
+}
+
+async function flush(): Promise<void> {
+  if (eventQueue.length === 0) return;
+
+  const eventsToSend = [...eventQueue];
+  eventQueue = [];
+
+  if (flushTimer) {
+    clearTimeout(flushTimer);
+    flushTimer = null;
+  }
+
+  try {
+    // Batch write to Firestore
+    const batch = eventsToSend.map(event => 
+      addDoc(collection(db, 'telemetry'), {
+        ...event,
+        timestamp: serverTimestamp(),
+      })
+    );
+
+    await Promise.all(batch);
+    
+    console.debug(`Flushed ${eventsToSend.length} telemetry events`);
+  } catch (error) {
+    console.error('Failed to flush telemetry events:', error);
+    
+    // Re-queue events on failure (with backoff)
+    eventQueue.unshift(...eventsToSend);
+    
+    // Retry with exponential backoff
+    setTimeout(() => {
+      if (eventQueue.length > 0) {
+        flush();
+      }
+    }, 5000);
+  }
+}
+
+// Performance tracking
+export function trackPerformance(
+  name: string,
+  duration: number,
+  metadata?: Record<string, unknown>
+): void {
+  track('performance', {
+    name,
+    duration,
+    ...metadata,
+  });
+}
+
+// Error tracking
+export function trackError(
+  error: Error,
+  context?: string,
+  metadata?: Record<string, unknown>
+): void {
+  track('error', {
+    message: error.message,
+    stack: error.stack,
+    name: error.name,
+    context,
+    ...metadata,
+  }, 'error');
+}
+
+// User action tracking
+export function trackUserAction(
+  action: string,
+  target?: string,
+  metadata?: Record<string, unknown>
+): void {
+  track('user_action', {
+    action,
+    target,
+    ...metadata,
+  });
+}
+
+// Page view tracking
+export function trackPageView(
+  path: string,
+  title?: string,
+  metadata?: Record<string, unknown>
+): void {
+  track('page_view', {
+    path,
+    title,
+    ...metadata,
+  });
+}
+
+// API call tracking
+export function trackApiCall(
+  endpoint: string,
+  method: string,
+  status: number,
+  duration: number,
+  metadata?: Record<string, unknown>
+): void {
+  track('api_call', {
+    endpoint,
+    method,
+    status,
+    duration,
+    ...metadata,
+  }, status >= 400 ? 'error' : 'ok');
+}
+
+// Feature usage tracking
+export function trackFeatureUsage(
+  feature: string,
+  action: string,
+  metadata?: Record<string, unknown>
+): void {
+  track('feature_usage', {
+    feature,
+    action,
+    ...metadata,
+  });
+}
+
+// Initialize telemetry on page load
+if (typeof window !== 'undefined') {
+  // Track initial page load
+  trackPageView(window.location.pathname, document.title);
+  
+  // Track session duration on page unload
+  window.addEventListener('beforeunload', () => {
+    const sessionDuration = Date.now() - startTime;
+    track('session_end', {
+      duration: sessionDuration,
+    });
+    
+    // Force flush on page unload
+    flush();
+  });
+  
+  // Track visibility changes
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      track('page_hidden');
+    } else {
+      track('page_visible');
+    }
+  });
+}
+
+// Export configuration for testing
+export { config };

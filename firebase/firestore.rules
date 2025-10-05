@@ -1,0 +1,88 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Users can read/write their own user document
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Campaigns - RBAC/TBAC enforced
+    match /campaigns/{campaignId} {
+      allow read: if request.auth != null && 
+        (resource.data.assignedTo == request.auth.uid || 
+         resource.data.createdBy == request.auth.uid ||
+         hasRole(request.auth.uid, 'admin') ||
+         hasRole(request.auth.uid, 'reviewer'));
+      
+      allow create: if request.auth != null && 
+        request.auth.uid == request.resource.data.createdBy;
+      
+      allow update: if request.auth != null && 
+        (request.auth.uid == resource.data.assignedTo ||
+         request.auth.uid == resource.data.createdBy ||
+         hasRole(request.auth.uid, 'admin') ||
+         hasRole(request.auth.uid, 'reviewer'));
+      
+      allow delete: if request.auth != null && 
+        hasRole(request.auth.uid, 'admin');
+    }
+    
+    // AI suggestions - read-only for assigned users, write for AI system
+    match /aiSuggestions/{suggestionId} {
+      allow read: if request.auth != null && 
+        (resource.data.assignedTo == request.auth.uid ||
+         hasRole(request.auth.uid, 'admin'));
+      
+      allow create, update: if request.auth != null && 
+        hasRole(request.auth.uid, 'ai-system');
+      
+      allow delete: if request.auth != null && 
+        hasRole(request.auth.uid, 'admin');
+    }
+    
+    // Governance - audit logs are immutable
+    match /governance/{document} {
+      allow read: if request.auth != null && 
+        hasRole(request.auth.uid, 'admin');
+      
+      allow create: if request.auth != null && 
+        hasRole(request.auth.uid, 'admin');
+      
+      // Updates only allowed for status changes, not content
+      allow update: if request.auth != null && 
+        hasRole(request.auth.uid, 'admin') &&
+        onlyStatusChanged(resource.data, request.resource.data);
+    }
+    
+    // Telemetry - append-only, read for admins
+    match /telemetry/{telemetryId} {
+      allow read: if request.auth != null && 
+        hasRole(request.auth.uid, 'admin');
+      
+      allow create: if request.auth != null;
+      
+      allow update, delete: if false; // Immutable
+    }
+    
+    // Wrike integration - admin only
+    match /wrike/{document} {
+      allow read, write: if request.auth != null && 
+        hasRole(request.auth.uid, 'admin');
+    }
+    
+    // Helper functions
+    function hasRole(userId, role) {
+      return get(/databases/$(database)/documents/users/$(userId)).data.roles[role] == true;
+    }
+    
+    function onlyStatusChanged(oldData, newData) {
+      let allowedFields = ['status', 'lastModified', 'modifiedBy'];
+      let oldFiltered = oldData;
+      let newFiltered = newData;
+      
+      return oldFiltered.diff(newFiltered).affectedKeys()
+        .hasOnly(allowedFields);
+    }
+  }
+}

@@ -1,0 +1,35 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // User profile images
+    match /users/{userId}/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Campaign assets
+    match /campaigns/{campaignId}/{allPaths=**} {
+      allow read: if request.auth != null && 
+        (resource.metadata.assignedTo == request.auth.uid ||
+         resource.metadata.createdBy == request.auth.uid ||
+         hasRole(request.auth.uid, 'admin'));
+      
+      allow write: if request.auth != null && 
+        (resource.metadata.assignedTo == request.auth.uid ||
+         resource.metadata.createdBy == request.auth.uid ||
+         hasRole(request.auth.uid, 'admin'));
+    }
+    
+    // Wrike exports (admin only)
+    match /exports/wrike/{allPaths=**} {
+      allow read, write: if request.auth != null && 
+        hasRole(request.auth.uid, 'admin');
+    }
+    
+    // Helper function
+    function hasRole(userId, role) {
+      return firestore.get(/databases/(default)/documents/users/$(userId)).data.roles[role] == true;
+    }
+  }
+}
