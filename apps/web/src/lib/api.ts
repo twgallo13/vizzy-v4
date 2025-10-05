@@ -8,8 +8,6 @@ import {
   deleteDoc, 
   query, 
   where, 
-  orderBy, 
-  limit,
   Timestamp,
   serverTimestamp,
   writeBatch
@@ -20,8 +18,13 @@ import { trackApiCall, trackError } from '@/lib/telemetry';
 import { mockApi } from '@/lib/mockData';
 
 // Check if we're in development mode and should use mock data
-const isDev = import.meta.env.VITE_ENV === 'dev' || import.meta.env.DEV;
-const useMockData = isDev && import.meta.env.VITE_FIREBASE_PROJECT_ID === 'vizzy-local';
+const envAny = (import.meta as any).env || {};
+const isDev = envAny.VITE_ENV === 'dev' || Boolean(envAny.DEV);
+const mockFlag = String(envAny.VITE_USE_MOCKS || '').toLowerCase();
+const useMockData = (
+  mockFlag === '1' || mockFlag === 'true' ||
+  (isDev && envAny.VITE_FIREBASE_PROJECT_ID === 'vizzy-local')
+);
 
 export interface ApiResponse<T = unknown> {
   data: T;
@@ -67,6 +70,17 @@ export class ApiService<T extends { id: string }> {
   async create(data: Omit<T, 'id'>): Promise<T> {
     const startTime = Date.now();
     
+    // Mock behavior
+    if (useMockData) {
+      const created = {
+        ...(data as Record<string, unknown>),
+        id: `mock-${this.collectionName}-${Date.now()}`,
+      } as T;
+      const duration = Date.now() - startTime;
+      trackApiCall(`${this.collectionName}/create`, 'POST', 201, duration);
+      return created;
+    }
+
     try {
       const docRef = await addDoc(collection(db, this.collectionName), {
         ...data,
@@ -96,6 +110,45 @@ export class ApiService<T extends { id: string }> {
   async getById(id: string): Promise<T | null> {
     const startTime = Date.now();
     
+    // Mock behavior
+    if (useMockData) {
+      try {
+        let mockData: T[] = [] as unknown as T[];
+        switch (this.collectionName) {
+          case 'users':
+            mockData = (await mockApi.getUsers()) as unknown as T[];
+            break;
+          case 'stores':
+            mockData = (await mockApi.getStores()) as unknown as T[];
+            break;
+          case 'campaigns':
+            mockData = (await mockApi.getCampaigns()) as unknown as T[];
+            break;
+          case 'governance':
+            mockData = (await mockApi.getGovernance()) as unknown as T[];
+            break;
+          case 'telemetry':
+            mockData = (await mockApi.getTelemetry()) as unknown as T[];
+            break;
+          default:
+            mockData = [] as unknown as T[];
+        }
+        const found = (mockData as any[]).find((x) => x.id === id) || null;
+        const duration = Date.now() - startTime;
+        trackApiCall(`${this.collectionName}/${id}`, 'GET', 200, duration);
+        return found as T | null;
+      } catch (error) {
+        const duration = Date.now() - startTime;
+        trackApiCall(`${this.collectionName}/${id}`, 'GET', 500, duration);
+        trackError(error as Error, `get_${this.collectionName}_by_id_mock`);
+        throw new ApiError(
+          `Failed to get ${this.collectionName}`,
+          'GET_ERROR',
+          500
+        );
+      }
+    }
+
     try {
       const docRef = doc(db, this.collectionName, id);
       const docSnap = await getDoc(docRef);
@@ -104,9 +157,10 @@ export class ApiService<T extends { id: string }> {
       trackApiCall(`${this.collectionName}/${id}`, 'GET', 200, duration);
       
       if (docSnap.exists()) {
+        const dataObj = convertTimestamps(docSnap.data());
         return {
           id: docSnap.id,
-          ...docSnap.data(),
+          ...(dataObj as Record<string, unknown>),
         } as T;
       }
       
@@ -129,27 +183,27 @@ export class ApiService<T extends { id: string }> {
     // Use mock data in development mode
     if (useMockData) {
       try {
-        let mockData: T[] = [];
+        let mockData: T[] = [] as unknown as T[];
         
         // Get appropriate mock data based on collection name
         switch (this.collectionName) {
           case 'users':
-            mockData = await mockApi.getUsers() as T[];
+            mockData = (await mockApi.getUsers()) as unknown as T[];
             break;
           case 'stores':
-            mockData = await mockApi.getStores() as T[];
+            mockData = (await mockApi.getStores()) as unknown as T[];
             break;
           case 'campaigns':
-            mockData = await mockApi.getCampaigns() as T[];
+            mockData = (await mockApi.getCampaigns()) as unknown as T[];
             break;
           case 'governance':
-            mockData = await mockApi.getGovernance() as T[];
+            mockData = (await mockApi.getGovernance()) as unknown as T[];
             break;
           case 'telemetry':
-            mockData = await mockApi.getTelemetry() as T[];
+            mockData = (await mockApi.getTelemetry()) as unknown as T[];
             break;
           default:
-            mockData = [];
+            mockData = [] as unknown as T[];
         }
         
         // Apply filters to mock data
@@ -178,22 +232,24 @@ export class ApiService<T extends { id: string }> {
     }
     
     try {
-      let q = collection(db, this.collectionName);
+      let q: any = collection(db, this.collectionName);
       
       // Apply filters
       if (filters) {
         Object.entries(filters).forEach(([key, value]) => {
-          q = query(q, where(key, '==', value));
+          q = query(q, where(key as string, '==', value as any));
         });
       }
       
       const querySnapshot = await getDocs(q);
       const results: T[] = [];
       
-      querySnapshot.forEach((doc) => {
+      querySnapshot.forEach((snap) => {
+        const raw = snap.data() as unknown as Record<string, unknown>;
+        const dataObj = convertTimestamps(raw);
         results.push({
-          id: doc.id,
-          ...doc.data(),
+          id: snap.id,
+          ...(dataObj as Record<string, unknown>),
         } as T);
       });
       
@@ -216,6 +272,14 @@ export class ApiService<T extends { id: string }> {
   async update(id: string, data: Partial<T>): Promise<T> {
     const startTime = Date.now();
     
+    // Mock behavior
+    if (useMockData) {
+      const updated = { id, ...(data as Record<string, unknown>) } as T;
+      const duration = Date.now() - startTime;
+      trackApiCall(`${this.collectionName}/${id}`, 'PATCH', 200, duration);
+      return updated;
+    }
+
     try {
       const docRef = doc(db, this.collectionName, id);
       await updateDoc(docRef, {
@@ -252,6 +316,13 @@ export class ApiService<T extends { id: string }> {
   async delete(id: string): Promise<void> {
     const startTime = Date.now();
     
+    // Mock behavior
+    if (useMockData) {
+      const duration = Date.now() - startTime;
+      trackApiCall(`${this.collectionName}/${id}`, 'DELETE', 200, duration);
+      return;
+    }
+
     try {
       const docRef = doc(db, this.collectionName, id);
       await deleteDoc(docRef);
