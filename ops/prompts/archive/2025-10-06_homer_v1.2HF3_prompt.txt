@@ -1,0 +1,15 @@
+[HOMER v1.2HF3] Normalize Slack guards in .github/workflows/cicd.yml to use env guards (no 'secrets' in if:), keep curl steps. Work ONLY on branch ci/polish-budgets-axe (PR #2). Record prompt + summary.
+
+STEPS
+set -euo pipefail
+git fetch --all --prune
+git checkout ci/polish-budgets-axe || git checkout -t origin/ci/polish-budgets-axe
+
+yml=".github/workflows/cicd.yml"
+
+# For any Slack notify steps, ensure this exact pattern:
+#   env:
+#     SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+#   if: ${{ success() && env.SLACK_WEBHOOK != '' }}
+# and the failure step uses: if: ${{ failure() && env.SLACK_WEBHOOK != '' }}
+# Remove any 'if:' that references 'secrets.' directly.
