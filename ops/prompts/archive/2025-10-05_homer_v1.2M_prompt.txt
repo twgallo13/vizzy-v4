@@ -1,0 +1,64 @@
+[HOMER v1.2M] Merge PR #2 (CI polish) using a merge commit, update Prompts Ledger, and confirm main is stable.
+
+RULES
+- Do ALL git steps for me. No questions.
+- Record THIS prompt + a summary in ops/prompts.
+- Use merge commit (no squash/rebase) to preserve history.
+
+STEPS
+set -euo pipefail
+pkill -f vite || true
+git fetch --all --prune
+git checkout main
+git pull --rebase origin main
+
+# 1) Verify PR #2 status and merge if green
+if command -v gh >/dev/null 2>&1; then
+  # If checks are pending or failing, post a comment and stop
+  if gh pr view 2 --json state,mergeable,headRefName,url,statusCheckRollup | grep -q '"state":"OPEN"'; then
+    if gh pr checks 2 --fail-fast; then
+      gh pr merge 2 --merge --delete-branch=false --admin || gh pr merge 2 --merge --delete-branch=false
+    else
+      gh pr comment 2 --body "HOMER v1.2M: Checks not green yet—holding merge."
+      echo "Checks not green—aborting v1.2M."
+      exit 0
+    fi
+  fi
+else
+  echo "gh CLI not available; please merge PR #2 manually via GitHub UI."
+fi
+
+# 2) Tag release for CI polish
+git pull --rebase origin main
+if ! git rev-parse -q --verify "refs/tags/ci-a11y-v1" >/dev/null; then
+  git tag -a ci-a11y-v1 -m "CI polish: budgets + axe + Slack fix"
+  git push origin --tags
+fi
+
+# 3) Record prompt + summary
+mkdir -p ops/prompts/archive
+cat > ops/prompts/archive/2025-10-05_homer_v1.2M_prompt.txt <<'PROMPT_END'
+[PASTE THIS FULL HOMER v1.2M PROMPT TEXT HERE]
+PROMPT_END
+
+TS=$(date -u +%Y%m%d-%H%M%S)
+SUMMARY=ops/prompts/archive/2025-10-05_homer_v1.2M_summary.md
+{
+  echo "# HOMER v1.2M Summary ($TS UTC)"
+  echo
+  echo "- PR #2 merged (if checks green): $(if command -v gh >/dev/null 2>&1; then gh pr view 2 --json state,url | sed 's/^/- /'; else echo '- (gh unavailable)'; fi)"
+  echo "- Tag pushed: ci-a11y-v1"
+} > "$SUMMARY"
+
+if [ ! -f ops/prompts/PROMPTS_LOG.md ]; then
+  echo "# Prompts Ledger" > ops/prompts/PROMPTS_LOG.md
+  echo "| Date (UTC) | Agent | Version | Branch | PR | Prompt | Summary |" >> ops/prompts/PROMPTS_LOG.md
+  echo "|---|---|---|---|---|---|---|" >> ops/prompts/PROMPTS_LOG.md
+fi
+echo "| $TS | Homer | v1.2M | main | https://github.com/${GITHUB_REPOSITORY}/pull/2 | ops/prompts/archive/2025-10-05_homer_v1.2M_prompt.txt | $SUMMARY |" >> ops/prompts/PROMPTS_LOG.md
+
+git add ops/prompts
+git commit -m "Prompts Ledger: v1.2M (merge PR #2 + tag ci-a11y-v1)" || true
+git push
+
+echo "✅ v1.2M done. main is up-to-date."
