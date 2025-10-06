@@ -1,0 +1,71 @@
+[HOMER v1.2F] Fix CI Slack step (remove unsupported webhook_url input), update ledger, push to PR #2.
+
+RULES
+- I am not a developer. Do ALL steps for me.
+- Patch the existing branch for PR #2: ci/polish-budgets-axe
+- Record THIS prompt text and a summary in ops/prompts.
+- Keep changes minimal; do not alter unrelated jobs.
+
+0) Prep
+set -euo pipefail
+pkill -f vite || true
+git fetch --all --prune
+git checkout main
+git pull --rebase origin main
+# Checkout PR #2 branch
+git checkout ci/polish-budgets-axe || git checkout -t origin/ci/polish-budgets-axe
+
+1) Replace Slack notify steps that use invalid 'webhook_url' input
+# Strategy: use a portable curl approach gated by secret presence.
+# - Success message: on job success
+# - Failure message: on job failure
+# - Skip entirely if SLACK_WEBHOOK secret is not set
+# Apply this in .github/workflows/cicd.yml wherever Slack notify is used.
+
+# Edit cicd.yml:
+# - Remove any 'with: webhook_url: ${{ secrets.SLACK_WEBHOOK }}' blocks.
+# - Replace Slack steps with:
+#   - name: Notify Slack (success)
+#     if: ${{ success() && secrets.SLACK_WEBHOOK != '' }}
+#     run: |
+#       MSG="✅ CI passed on $GITHUB_REPOSITORY@$GITHUB_REF ($GITHUB_SHA)"
+#       payload=$(printf '{"text":"%s"}' "$MSG")
+#       curl -X POST -H 'Content-type: application/json' --data "$payload" "${{ secrets.SLACK_WEBHOOK }}"
+#   - name: Notify Slack (failure)
+#     if: ${{ failure() && secrets.SLACK_WEBHOOK != '' }}
+#     run: |
+#       MSG="❌ CI failed on $GITHUB_REPOSITORY@$GITHUB_REF ($GITHUB_SHA)"
+#       payload=$(printf '{"text":"%s"}' "$MSG")
+#       curl -X POST -H 'Content-type: application/json' --data "$payload" "${{ secrets.SLACK_WEBHOOK }}"
+
+# Notes:
+# - Keep existing jobs/names; just swap Slack steps.
+# - Do NOT fail the workflow if SLACK_WEBHOOK is missing; the 'if' guard prevents running.
+
+2) Optional: quiet editor “Context might be invalid” warnings
+# These are just editor hints. Do nothing functional.
+# Ensure we only reference secrets via ${{ secrets.NAME }} which is already correct.
+
+3) Prompts Ledger
+mkdir -p ops/prompts/archive
+cat > ops/prompts/archive/2025-10-05_homer_v1.2F_prompt.txt <<'PROMPT_END'
+[PASTE THE FULL HOMER v1.2F PROMPT TEXT HERE]
+PROMPT_END
+
+TS=$(date -u +%Y%m%d-%H%M%S)
+SUMMARY="ops/prompts/archive/2025-10-05_homer_v1.2F_summary.md"
+{
+  echo "# HOMER v1.2F Summary ($TS UTC)"
+  echo
+  echo "- Patched branch: ci/polish-budgets-axe (PR #2)"
+  echo "- Change: replace Slack notify steps with curl-based webhook; gated on secrets.SLACK_WEBHOOK"
+  echo "- Files changed: .github/workflows/cicd.yml; ops/prompts/archive/*v1.2F*"
+} > "$SUMMARY"
+
+if [ ! -f ops/prompts/PROMPTS_LOG.md ]; then
+  echo "# Prompts Ledger" > ops/prompts/PROMPTS_LOG.md
+  echo "" >> ops/prompts/PROMPTS_LOG.md
+  echo "| Date (UTC) | Agent | Version | Branch | PR | Prompt | Summary |" >> ops/prompts/PROMPTS_LOG.md
+  echo "|---|---|---|---|---|---|---|" >> ops/prompts/PROMPTS_LOG.md
+fi
+echo "| $TS | Homer | v1.2F | ci/polish-budgets-axe | https://github.com/${GITHUB_REPOSITORY}/pull/2 | ops/prompts/archive/2025-10-05_homer_v1.2F_prompt.txt | $SUMMARY |" >> ops/prompts/PROMPTS_LOG.md
