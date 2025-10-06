@@ -1,0 +1,8 @@
+[HOMER v1.2HF4] CI harden: remove all 'secrets.*' from any 'if:' (jobs + steps); gate deploy jobs with env-based guards; staging=main, production=tags; keep curl Slack. Work ONLY on branch ci/polish-budgets-axe (PR #2). Record prompt+summary in ops/prompts and update ledger.
+
+STEPS
+set -euo pipefail
+git fetch --all --prune
+git checkout ci/polish-budgets-axe || git checkout -t origin/ci/polish-budgets-axe
+
+... see task body ...
