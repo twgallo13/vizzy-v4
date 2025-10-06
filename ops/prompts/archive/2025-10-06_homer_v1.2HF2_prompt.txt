@@ -1,0 +1,9 @@
+[HOMER v1.2HF2] Patch CI: remove ALL leftover 'webhook_url' inputs, replace Slack steps with curl + env guard, and fix markdownlint warnings in prompts. Push to branch ci/polish-budgets-axe (PR #2) and record this prompt+summary in the ledger.
+
+RULES
+- Edit ONLY .github/workflows/cicd.yml and ops/prompts/**.
+- Keep working on branch: ci/polish-budgets-axe. Do not create new branches.
+- Do all steps, no questions.
+
+STEPS
+... see task body ...
