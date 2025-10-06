@@ -453,6 +453,12 @@ Generates AI-powered suggestions.
 ```
 
 ## 🆘 Troubleshooting
+## Dev Firebase Toggle
+
+- Default: MOCKS (no Firebase). See `apps/web/.env.example`.
+- To use real Firebase in dev: set `VITE_USE_MOCKS=0` in `apps/web/.env.local` and fill the `VITE_FIREBASE_*` vars.
+- Optional: set `VITE_USE_EMULATORS=1` to connect to local Auth/Firestore emulators.
+
 
 ### Common Issues
 

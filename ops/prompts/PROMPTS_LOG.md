@@ -7,3 +7,4 @@
 | 2025-10-05 | Homer | v1.2 | PR #2 | ops/prompts/archive/2025-10-05_homer_v1.2_prompt.txt | ops/prompts/archive/2025-10-05_homer_v1.2_summary.md |
 | 2025-10-06 | Homer | v1.2F | branch ci/polish-budgets-axe (PR #2) | ops/prompts/archive/2025-10-05_homer_v1.2F_prompt.txt | ops/prompts/archive/2025-10-05_homer_v1.2F_summary.md |
 | 2025-10-06 | Homer | v1.2M | main (PR #2) | ops/prompts/archive/2025-10-05_homer_v1.2M_prompt.txt | ops/prompts/archive/2025-10-05_homer_v1.2M_summary.md |
+| 2025-10-06 | Homer | v1.3 | feature/dev-firebase-toggle-20251006-002255 (new PR) | ops/prompts/archive/2025-10-05_homer_v1.3_prompt.txt | ops/prompts/archive/2025-10-05_homer_v1.3_summary.md |

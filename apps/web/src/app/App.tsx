@@ -8,6 +8,7 @@ import { CommandPalette } from '@/components/CommandPalette';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { NAV } from '@/config/nav.config';
 import { trackRouteView } from '@/lib/telemetry';
+import { AuthGate } from './AuthGate';
 
 // Lazy load route components
 const PlannerPage = React.lazy(() => import('@/routes/PlannerPage'));
@@ -17,6 +18,7 @@ const CalendarPage = React.lazy(() => import('@/routes/CalendarPage'));
 const AssignmentPage = React.lazy(() => import('@/routes/AssignmentPage'));
 const AdminWrikeSchemaPage = React.lazy(() => import('@/routes/admin/WrikeSchemaPage'));
 const DataPage = React.lazy(() => import('@/routes/DataPage'));
+const LoginPage = React.lazy(() => import('@/routes/LoginPage'));
 
 // Initialize Firebase and app services
 init();
@@ -34,6 +36,7 @@ function App(): JSX.Element {
       <Layout>
         <Suspense fallback={<LoadingSpinner />}>
           <AnimatePresence mode="wait">
+            <AuthGate>
             <Routes>
               <Route path="/" element={<Navigate to="/planner" replace />} />
               
@@ -93,7 +96,9 @@ function App(): JSX.Element {
                   </div>
                 }
               />
+              <Route path="/login" element={<Suspense fallback={null}><LoginPage /></Suspense>} />
             </Routes>
+            </AuthGate>
           </AnimatePresence>
         </Suspense>
       </Layout>
