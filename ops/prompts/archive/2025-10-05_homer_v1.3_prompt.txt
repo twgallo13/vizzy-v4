@@ -1,0 +1,46 @@
+[HOMER v1.3] Wire Dev Firebase (auth + Firestore) behind an env toggle. Keep DEMO/MOCK as default. Record prompt+summary, create a branch, commit, push, and open a PR.
+
+RULES
+- Single feature branch only. No churn.
+- Do ALL steps. No questions.
+- No secrets in git. Use .env.local and .env.example only.
+
+0) Prep
+set -euo pipefail
+pkill -f vite || true
+git fetch --all --prune
+git checkout main
+git pull --rebase origin main
+TS=$(date -u +%Y%m%d-%H%M%S)
+BR="feature/dev-firebase-toggle-$TS"
+git checkout -b "$BR"
+
+1) Env templates (no secrets)
+# apps/web/.env.example
+... see task body ...
+
+2) Firebase bootstrap module
+# apps/web/src/lib/firebase.ts
+... see task body ...
+
+3) Minimal AuthGate and Login route (non-invasive)
+# apps/web/src/app/AuthGate.tsx
+# apps/web/src/routes/LoginPage.tsx
+... see task body ...
+
+4) Wire AuthGate around the app and add /login route
+# apps/web/src/app/App.tsx
+... see task body ...
+
+5) API: respect toggle (use Firestore when mocks OFF)
+# apps/web/src/lib/api.ts
+... see task body ...
+
+6) README note for dev Firebase
+... see task body ...
+
+7) Prompts Ledger (record prompt + summary)
+... see task body ...
+
+8) Commit, push, PR
+... see task body ...

@@ -1,6 +1,8 @@
-import { db } from '@/app/init';
+import { createFirebase, isUsingMocks } from '@/lib/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { analytics } from '@/app/init';
+const fb = createFirebase();
+const db = fb?.db as any;
+const analytics = (fb as any)?.analytics ?? null;
 import { logEvent as firebaseLogEvent } from 'firebase/analytics';
 
 export interface TelemetryEvent {
@@ -114,15 +116,16 @@ async function flush(): Promise<void> {
   }
 
   try {
-    // Batch write to Firestore
-    const batch = eventsToSend.map(event => 
-      addDoc(collection(db, 'telemetry'), {
-        ...event,
-        timestamp: serverTimestamp(),
-      })
-    );
-
-    await Promise.all(batch);
+    if (!isUsingMocks() && db) {
+      // Batch write to Firestore when Firebase is active
+      const batch = eventsToSend.map(event =>
+        addDoc(collection(db, 'telemetry'), {
+          ...event,
+          timestamp: serverTimestamp(),
+        })
+      );
+      await Promise.all(batch);
+    }
     
     console.debug(`Flushed ${eventsToSend.length} telemetry events`);
   } catch (error) {

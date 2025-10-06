@@ -13,18 +13,15 @@ import {
   writeBatch
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { db, functions } from '@/app/init';
+import { isUsingMocks, createFirebase } from '@/lib/firebase';
 import { trackApiCall, trackError } from '@/lib/telemetry';
 import { mockApi } from '@/lib/mockData';
 
 // Check if we're in development mode and should use mock data
-const envAny = (import.meta as any).env || {};
-const isDev = envAny.VITE_ENV === 'dev' || Boolean(envAny.DEV);
-const mockFlag = String(envAny.VITE_USE_MOCKS || '').toLowerCase();
-const useMockData = (
-  mockFlag === '1' || mockFlag === 'true' ||
-  (isDev && envAny.VITE_FIREBASE_PROJECT_ID === 'vizzy-local')
-);
+const useMockData = isUsingMocks();
+const fb = createFirebase();
+const db = fb?.db as any;
+const functions = fb?.functions as any;
 
 export interface ApiResponse<T = unknown> {
   data: T;
