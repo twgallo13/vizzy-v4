@@ -9,3 +9,4 @@
 | 2025-10-06 | Homer | v1.2HF2 | ci/polish-budgets-axe (PR #2) | ops/prompts/archive/2025-10-06_homer_v1.2HF2_prompt.txt | ops/prompts/archive/2025-10-06_homer_v1.2HF2_summary.md |
 | 2025-10-06 | Homer | v1.2HF3 | ci/polish-budgets-axe (PR #2) | ops/prompts/archive/2025-10-06_homer_v1.2HF3_prompt.txt | ops/prompts/archive/2025-10-06_homer_v1.2HF3_summary.md |
 | 2025-10-06 | Homer | v1.2HF4 | ci/polish-budgets-axe (PR #2) | ops/prompts/archive/2025-10-06_homer_v1.2HF4_prompt.txt | ops/prompts/archive/2025-10-06_homer_v1.2HF4_summary.md |
+| 2025-10-06 | HOMER | v1.2HF5 | ci/polish-budgets-axe (PR #2) | 2025-10-06_homer_v1.2HF5_prompt.txt | 2025-10-06_homer_v1.2HF5_summary.md |

@@ -201,7 +201,7 @@ jobs:
       FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
       STAGING_URL: ${{ secrets.STAGING_URL }}
       SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
-    if: ${{ github.ref == 'refs/heads/main' && env.FIREBASE_TOKEN != '' && env.STAGING_URL != '' && github.event_name != 'pull_request' }}
+    if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -219,35 +219,31 @@ jobs:
         run: npm run build
 
       - name: Deploy to Firebase Staging
+        if: ${{ env.FIREBASE_TOKEN != '' && env.STAGING_URL != '' }}
         run: |
-          echo "${{ secrets.FIREBASE_TOKEN }}" | firebase login:ci
+          echo "${{ env.FIREBASE_TOKEN }}" | firebase login:ci
           firebase use staging
           firebase deploy --only hosting,functions,firestore:rules,storage:rules
-        env:
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
 
       - name: Run smoke tests
+        if: ${{ env.STAGING_URL != '' }}
         run: |
           # Add smoke tests here to verify staging deployment
-          curl -f ${{ secrets.STAGING_URL }}/health || exit 1
+          curl -f ${{ env.STAGING_URL }}/health || exit 1
 
       - name: Notify Slack (success)
-        env:
-          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
         if: ${{ success() && env.SLACK_WEBHOOK != '' }}
         run: |
-          MSG="✅ CI passed on $GITHUB_REPOSITORY@$GITHUB_REF ($GITHUB_SHA)"
-          payload=$(printf '{"text":"%s"}' "$MSG")
-          curl -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK"
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\"✅ Staging deploy succeeded: ${GITHUB_SHA} → ${STAGING_URL}\"}" \
+            "$SLACK_WEBHOOK"
 
       - name: Notify Slack (failure)
-        env:
-          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
         if: ${{ failure() && env.SLACK_WEBHOOK != '' }}
         run: |
-          MSG="❌ CI failed on $GITHUB_REPOSITORY@$GITHUB_REF ($GITHUB_SHA)"
-          payload=$(printf '{"text":"%s"}' "$MSG")
-          curl -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK"
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\"❌ Staging deploy failed for ${GITHUB_SHA}\"}" \
+            "$SLACK_WEBHOOK"
 
   # Deploy to production (on main branch)
   deploy-production:
@@ -258,7 +254,7 @@ jobs:
       FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
       PRODUCTION_URL: ${{ secrets.PRODUCTION_URL }}
       SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
-    if: ${{ startsWith(github.ref, 'refs/tags/') && env.FIREBASE_TOKEN != '' && env.PRODUCTION_URL != '' }}
+    if: ${{ startsWith(github.ref, 'refs/tags/') }}
     environment: production
     steps:
       - name: Checkout code
@@ -277,35 +273,31 @@ jobs:
         run: npm run build
 
       - name: Deploy to Firebase Production
+        if: ${{ env.FIREBASE_TOKEN != '' && env.PRODUCTION_URL != '' }}
         run: |
-          echo "${{ secrets.FIREBASE_TOKEN }}" | firebase login:ci
+          echo "${{ env.FIREBASE_TOKEN }}" | firebase login:ci
           firebase use production
           firebase deploy --only hosting,functions,firestore:rules,storage:rules
-        env:
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
 
       - name: Run smoke tests
+        if: ${{ env.PRODUCTION_URL != '' }}
         run: |
           # Add smoke tests here to verify production deployment
-          curl -f ${{ secrets.PRODUCTION_URL }}/health || exit 1
+          curl -f ${{ env.PRODUCTION_URL }}/health || exit 1
 
       - name: Notify Slack (success)
-        env:
-          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
         if: ${{ success() && env.SLACK_WEBHOOK != '' }}
         run: |
-          MSG="✅ CI passed on $GITHUB_REPOSITORY@$GITHUB_REF ($GITHUB_SHA)"
-          payload=$(printf '{"text":"%s"}' "$MSG")
-          curl -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK"
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\"✅ Production deploy succeeded: ${GITHUB_REF#refs/tags/} (${GITHUB_SHA}) → ${PRODUCTION_URL}\"}" \
+            "$SLACK_WEBHOOK"
 
       - name: Notify Slack (failure)
-        env:
-          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
         if: ${{ failure() && env.SLACK_WEBHOOK != '' }}
         run: |
-          MSG="❌ CI failed on $GITHUB_REPOSITORY@$GITHUB_REF ($GITHUB_SHA)"
-          payload=$(printf '{"text":"%s"}' "$MSG")
-          curl -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK"
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\"❌ Production deploy failed for ${GITHUB_REF#refs/tags/} (${GITHUB_SHA})\"}" \
+            "$SLACK_WEBHOOK"
 
   # Performance monitoring
   performance-monitoring:
@@ -313,6 +305,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: [deploy-staging]
     if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    env:
+      STAGING_URL: ${{ secrets.STAGING_URL }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -329,7 +323,7 @@ jobs:
       - name: Run Lighthouse performance tests
         run: |
           npm install -g lighthouse
-          lighthouse ${{ secrets.STAGING_URL }} --output=json --output-path=./lighthouse-report.json
+          lighthouse ${{ env.STAGING_URL }} --output=json --output-path=./lighthouse-report.json
           
           # Check performance scores
           node -e "
